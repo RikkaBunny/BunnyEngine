@@ -1,10 +1,12 @@
 project "yaml-cpp"
 	kind "StaticLib"
 	language "C++"
+	staticruntime "on"
 
 	targetdir ("bin/" .. outputdir .. "/%{prj.name}")
 	objdir ("bin-int/" .. outputdir .. "/%{prj.name}")
 
+	buildoptions "/MTd"
 	files
 	{
 		"src/**.h",
@@ -32,7 +34,9 @@ project "yaml-cpp"
 	filter "configurations:Debug"
 		runtime "Debug"
 		symbols "on"
+		buildoptions "/MTd"
 
 	filter "configurations:Release"
 		runtime "Release"
 		optimize "on"
+		buildoptions "/MT"
