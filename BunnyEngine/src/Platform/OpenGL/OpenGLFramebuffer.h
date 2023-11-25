@@ -1,37 +1,44 @@
 #pragma once
+
 #include "BunnyEngine/Renderer/Framebuffer.h"
 
-namespace BE {
-
+namespace BE
+{
 	class OpenGLFramebuffer : public Framebuffer
 	{
 	public:
 		OpenGLFramebuffer(const FramebufferSpecification& spec);
 		virtual ~OpenGLFramebuffer();
-		
+
 		virtual void Bind() override;
-		virtual void UnBind() override;
+		virtual void BindColorTexture(uint32_t slot, uint32_t index) override;
+		virtual void BindDepthTexture(uint32_t slot, uint32_t index) override;
+		virtual void Unbind() override;
 
 		virtual void Resize(uint32_t width, uint32_t height) override;
-		virtual int ReadPixel(uint32_t attachmentIndex, int x, int y) override;
-		virtual void ClearAttachment(uint32_t attachmentIndex, int value) override;
-		virtual void BindAttachment(uint32_t attachmentIndex, int value, bool Depth) override;
+		virtual int ReadPixel(uint32_t attachmentIndex, int x, int y) const override;
 
-		virtual uint32_t GetColorAttachmentRendererID(uint32_t index = 0) const override { BE_CORE_ASSERT(index < m_ColorAttachments.size()); return m_ColorAttachments[index]; }
+		virtual void ClearColorAttachment(uint32_t attachmentIndex, int value) override;
+		virtual void CopyDepthBufferFrom(const Ref<Framebuffer>& source) override;
+
 		virtual const FramebufferSpecification& GetSpecification() const override { return m_Specification; }
-		
-		void Invalidate();
+
+		virtual uint32_t GetColorAttachment(uint32_t index = 0) const override { BE_CORE_ASSERT(index < m_ColorAttachments.size(), "Invalid Index"); return m_ColorAttachments[index]; }
+		virtual uint32_t GetDepthAttachment(uint32_t index = 0) const override { BE_CORE_ASSERT(index < m_DepthAttachments.size(), "Invalid Index"); return m_DepthAttachments[index]; }
+		virtual uint32_t GetRendererID() const override { return m_RendererID; }
+
 	private:
-		uint32_t m_RendererID = 0;
+		void Invalidate();
+		void FreeMemory();
+
+	private:
 		FramebufferSpecification m_Specification;
+		uint32_t m_RendererID;
 
 		std::vector<FramebufferTextureSpecification> m_ColorAttachmentSpecifications;
-		FramebufferTextureSpecification m_DepthAttachmentSpecifications;
+		std::vector <FramebufferTextureSpecification> m_DepthAttachmentSpecifications;
 
 		std::vector<uint32_t> m_ColorAttachments;
-		uint32_t m_DepthAttachment;
+		std::vector <uint32_t> m_DepthAttachments;
 	};
-
 }
-
-

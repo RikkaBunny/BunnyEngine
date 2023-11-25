@@ -7,18 +7,18 @@
 
 namespace BE {
 
-	class BE_API ImGuiLayer : public Layer
+	class ImGuiLayer : public Layer
 	{
 	public:
 		ImGuiLayer();
 		~ImGuiLayer();
 
-		virtual void OnAttcah() override;
+		virtual void OnAttach() override;
 		virtual void OnDetach() override;
 		//virtual void OnImGuiRender() override;
 		virtual void OnEvent(Event& e) override;
 
-		void Begine();
+		void Begin();
 		void End();
 		
 		void BlockEvents(bool blockEvents) { m_BlockEvents = blockEvents; }

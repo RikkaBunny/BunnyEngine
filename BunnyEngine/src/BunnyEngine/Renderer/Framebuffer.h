@@ -1,70 +1,65 @@
 #pragma once
 
+#include "BunnyEngine/Core/Core.h"
 
-namespace BE {
+namespace BE
+{
+	enum class FramebufferTextureFormat
+	{
+		None,
 
-	enum class FramebufferTextureFormat {
-		None = 0,
-
-		//Color
-		RGBA8,
+		//Colors
+		RGB16F,
+		RGB32F,
 		RGBA16F,
 		RGBA32F,
+		RGBA8,
 		RED_INTEGER,
 
-		//Depth/stencil
-		DEPTH24STENCIL8,
-		DEPTH32F_STENCIL8,
-
-		//Defaults
-		Depth = DEPTH24STENCIL8
+		//Depth
+		DEPTH16,
+		DEPTH24,
+		DEPTH32F,
+		DEPTH24STENCIL8
 	};
 
-	struct  FramebufferTextureSpecification
+	struct FramebufferTextureSpecification
 	{
-		FramebufferTextureSpecification() = default;
-		FramebufferTextureSpecification(FramebufferTextureFormat format)
-			: TextureFormat(format){}
-
 		FramebufferTextureFormat TextureFormat = FramebufferTextureFormat::None;
-		// filtering / warp
+		bool bCubeMap = false;
+		//TODO: Add Filters & Wraps
 	};
 
-	struct  FramebufferAttachmentSpecification
+	struct FramebufferSpecification
 	{
-		FramebufferAttachmentSpecification() = default;
-		FramebufferAttachmentSpecification(std::initializer_list<FramebufferTextureSpecification> attachments)
-			: Attachments(attachments) {}
 		std::vector<FramebufferTextureSpecification> Attachments;
-	};
-
-	struct  FramebufferSpecification
-	{
-		uint32_t Width, Height;
-		FramebufferAttachmentSpecification Attachments;
+		uint32_t Width = 0, Height = 0;
 		uint32_t Samples = 1;
-
 		bool SwapChainTarget = false;
 	};
 
 	class Framebuffer
 	{
 	public:
+		virtual ~Framebuffer() = default;
 
-		virtual void Bind() =0;
-		virtual void UnBind() =0;
+		virtual void Bind() = 0;
+		virtual void BindColorTexture(uint32_t slot, uint32_t index) = 0;
+		virtual void BindDepthTexture(uint32_t slot, uint32_t index) = 0;
+		virtual void Unbind() = 0;
 
 		virtual void Resize(uint32_t width, uint32_t height) = 0;
-		virtual int ReadPixel(uint32_t attachmentIndex, int x, int y) = 0;
+		virtual int ReadPixel(uint32_t attachmentIndex, int x, int y) const = 0;
 
-		virtual void ClearAttachment(uint32_t attachmentIndex, int value) = 0;
-		virtual void BindAttachment(uint32_t attachmentIndex, int value, bool Depth = 0) = 0;
+		virtual void ClearColorAttachment(uint32_t attachmentIndex, int value) = 0;
+		virtual void CopyDepthBufferFrom(const Ref<Framebuffer>& source) = 0;
+		virtual uint32_t GetRendererID() const = 0;
 
-		virtual uint32_t GetColorAttachmentRendererID(uint32_t index = 0) const = 0;
 		virtual const FramebufferSpecification& GetSpecification() const = 0;
+
+		virtual uint32_t GetColorAttachment(uint32_t index = 0) const = 0;
+		virtual uint32_t GetDepthAttachment(uint32_t index = 0) const = 0;
 
 		static Ref<Framebuffer> Create(const FramebufferSpecification& spec);
 	};
-
-
 }

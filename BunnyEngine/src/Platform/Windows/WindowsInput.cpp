@@ -1,33 +1,35 @@
 #include "BEpch.h"
-#include "BunnyEngine/Core/Input.h"
 
 #include "BunnyEngine/Core/Application.h"
+#include "BunnyEngine/Input/Input.h"
+#include "WindowsWindow.h"
+
 #include <GLFW/glfw3.h>
 
+namespace BE
+{
+	static bool s_CursorVisible = true;
 
-namespace BE {
-
-
-	bool Input::IsKeyPressed(int keycode)
+	bool Input::IsKeyPressed(Key keyCode)
 	{
-		auto window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindow());
-		auto state = glfwGetKey(window, keycode);
-		return  state == GLFW_PRESS || state == GLFW_REPEAT;
+		GLFWwindow* window = (GLFWwindow*)Application::Get().GetWindow().GetNativeWindow();
+		int state = glfwGetKey(window, keyCode);
+		return state == GLFW_PRESS || state == GLFW_REPEAT;
 	}
 
-	bool Input::IsMouseButtonPressed(int button)
+	bool Input::IsMouseButtonPressed(Mouse mouseButton)
 	{
-		auto window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindow());
-		auto state = glfwGetMouseButton(window, button);
-		return  state == GLFW_PRESS;
+		GLFWwindow* window = (GLFWwindow*)Application::Get().GetWindow().GetNativeWindow();
+		int state = glfwGetMouseButton(window, mouseButton);
+		return state == GLFW_PRESS;
 	}
 
 	std::pair<float, float> Input::GetMousePosition()
 	{
-		auto window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindow());
-		double xpos, ypos;
-		glfwGetCursorPos(window, &xpos, &ypos);
-		return { (float)xpos, (float)ypos };
+		GLFWwindow* window = (GLFWwindow*)Application::Get().GetWindow().GetNativeWindow();
+		double x, y;
+		glfwGetCursorPos(window, &x, &y);
+		return { (float)x, (float)y };
 	}
 
 	float Input::GetMouseX()
@@ -42,5 +44,22 @@ namespace BE {
 		return y;
 	}
 
-}
+	void Input::SetShowCursor(bool bShow)
+	{
+		s_CursorVisible = bShow;
+		GLFWwindow* window = (GLFWwindow*)Application::Get().GetWindow().GetNativeWindow();
 
+		glfwSetInputMode(window, GLFW_CURSOR, bShow ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+	}
+
+	void Input::SetCursorPos(double xPos, double yPos)
+	{
+		GLFWwindow* window = (GLFWwindow*)Application::Get().GetWindow().GetNativeWindow();
+		glfwSetCursorPos(window, xPos, yPos);
+	}
+
+	bool Input::IsCursorVisible()
+	{
+		return s_CursorVisible;
+	}
+}

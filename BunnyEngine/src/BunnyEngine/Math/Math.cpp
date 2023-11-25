@@ -3,17 +3,18 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtx/quaternion.hpp>
 
-namespace BE::Math {
-
-	bool DecomposeTransform(const glm::mat4& transform, glm::vec3& translation, glm::vec3& rotation, glm::vec3& scale)
+namespace BE::Math
+{
+	bool DecomposeTransformMatrix(const glm::mat4& transformMatrix, glm::vec3& outLocation, glm::vec3& outRotation, glm::vec3& outScale)
 	{
 		// From glm::decompose in matrix_decompose.inl
 
 		using namespace glm;
 		using T = float;
 
-		mat4 LocalMatrix(transform);
+		mat4 LocalMatrix(transformMatrix);
 
 		// Normalize the matrix.
 		if (epsilonEqual(LocalMatrix[3][3], static_cast<float>(0), epsilon<T>()))
@@ -31,10 +32,10 @@ namespace BE::Math {
 		}
 
 		// Next take care of translation (easy).
-		translation = vec3(LocalMatrix[3]);
+		outLocation = vec3(LocalMatrix[3]);
 		LocalMatrix[3] = vec4(0, 0, 0, LocalMatrix[3].w);
 
-		vec3 Row[3], Pdum3;
+		vec3 Row[3];
 
 		// Now get scale and shear.
 		for (length_t i = 0; i < 3; ++i)
@@ -42,11 +43,11 @@ namespace BE::Math {
 				Row[i][j] = LocalMatrix[i][j];
 
 		// Compute X scale factor and normalize first row.
-		scale.x = length(Row[0]);
+		outScale.x = length(Row[0]);
 		Row[0] = detail::scale(Row[0], static_cast<T>(1));
-		scale.y = length(Row[1]);
+		outScale.y = length(Row[1]);
 		Row[1] = detail::scale(Row[1], static_cast<T>(1));
-		scale.z = length(Row[2]);
+		outScale.z = length(Row[2]);
 		Row[2] = detail::scale(Row[2], static_cast<T>(1));
 
 		// At this point, the matrix (in rows[]) is orthonormal.
@@ -64,18 +65,30 @@ namespace BE::Math {
 		}
 #endif
 
-		rotation.y = asin(-Row[0][2]);
-		if (cos(rotation.y) != 0) {
-			rotation.x = atan2(Row[1][2], Row[2][2]);
-			rotation.z = atan2(Row[0][1], Row[0][0]);
+		outRotation.y = asin(-Row[0][2]);
+		if (cos(outRotation.y) != 0) {
+			outRotation.x = atan2(Row[1][2], Row[2][2]);
+			outRotation.z = atan2(Row[0][1], Row[0][0]);
 		}
 		else {
-			rotation.x = atan2(-Row[2][0], Row[1][1]);
-			rotation.z = 0;
+			outRotation.x = atan2(-Row[2][0], Row[1][1]);
+			outRotation.z = 0;
 		}
 
 
 		return true;
 	}
 
+	glm::mat4 ToTransformMatrix(const Transform& transform)
+	{
+		glm::mat4 rotation = GetRotationMatrix(transform.Rotation);
+		return glm::translate(glm::mat4(1.0f), transform.Location)
+			* rotation
+			* glm::scale(glm::mat4(1.0f), transform.Scale3D);
+	}
+
+	glm::mat4 GetRotationMatrix(const Rotator& rotation)
+	{
+		return rotation.ToMat4();
+	}
 }

@@ -1,51 +1,69 @@
 #pragma once
-#include "OrthographicCamera.h"
+
+#include "BunnyEngine/Core/Transform.h"
 #include "Texture.h"
-#include "BunnyEngine/Renderer/Camera.h"
-#include "BunnyEngine/Renderer/EditorCamera.h"
-#include <BunnyEngine/Scene/Components.h>
-#include "BunnyEngine/Renderer/Framebuffer.h"
-namespace BE {
+#include "SubTexture2D.h"
+#include "BunnyEngine/Core/Entity.h"
+#include <glm/glm.hpp>
+
+namespace BE
+{
+	class CameraComponent;
+	class EditorCamera;
+	class PointLightComponent;
+	class DirectionalLightComponent;
+	class SpotLightComponent;
+	class Material;
+	struct RenderInfo;
+	enum class DrawTo;
 
 	class Renderer2D
 	{
 	public:
+		
 		static void Init();
-		static void InitQuad();
 		static void Shutdown();
 
-		static void BeginScene(const Camera& camera, const glm::mat4& transform);
-		static void BeginScene(const EditorCamera& camera);
-		static void BeginScene(const OrthographicCamera& camera);
-		static void BeginScene(const glm::mat4 viewProjectionMatrix);
+		//If rendering to Point Light Shadow map, specify pointLightIndex
+		static void BeginScene(const RenderInfo& renderInfo);
 		static void EndScene();
+		static void Flush();
 
-		//Primitives
-		static void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
-		static void DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color);
+		static bool IsRedrawing();
 
-		static void DrawQuad(const glm::vec2& position, const glm::vec2& size, const Ref<Texture2D> texture, const glm::vec4& color = glm::vec4(1.0f), const glm::vec2& TexTiling = glm::vec2(1.0f));
-		static void DrawQuad(const glm::vec3& position, const glm::vec2& size, const Ref<Texture2D> texture, const glm::vec4& color = glm::vec4(1.0f), const glm::vec2& TexTiling = glm::vec2(1.0f));
+		static void DrawQuad(const Transform& transform, const Ref<Material>& material, int entityID = -1);
+		static void DrawQuad(const Transform& transform, const Ref<SubTexture2D>& subtexture, const TextureProps& textureProps, int entityID = -1);
+		static void DrawSkybox(const Ref<Cubemap>& cubemap);
+		static void DrawDebugLine(const glm::vec3& start, const glm::vec3& end, const glm::vec4& color);
 
-		static void DrawQuad(const glm::vec2& position, const glm::vec2& size, float rotation, const glm::vec4& color);
-		static void DrawQuad(const glm::vec3& position, const glm::vec2& size, float rotation, const glm::vec4& color);
-																			   
-		static void DrawQuad(const glm::vec2& position, const glm::vec2& size, float rotation, const Ref<Texture2D> texture, const glm::vec4& color = glm::vec4(1.0f), const glm::vec2& TexTiling = glm::vec2(1.0f));
-		static void DrawQuad(const glm::vec3& position, const glm::vec2& size, float rotation, const Ref<Texture2D> texture, const glm::vec4& color = glm::vec4(1.0f), const glm::vec2& TexTiling = glm::vec2(1.0f));
+	private:
+		//General function that are being called
+		static void DrawQuad(const glm::mat4& transform, const Ref<Material>& material, int entityID = -1);
+		static void DrawQuad(const glm::mat4& transform, const Ref<SubTexture2D>& subtexture, const TextureProps& textureProps, int entityID = -1);
+		static void DrawCurrentSkybox();
+		static void DrawLines();
+		static void ResetLinesData();
 
-		static void DrawQuad(const glm::mat4& transform, const glm::vec4& color);
-		static void DrawQuad(const glm::mat4& transform, const Ref<Texture2D> texture, const glm::vec4& color = glm::vec4(1.0f), const glm::vec2& TexTiling = glm::vec2(1.0f));
+		static void InitSpriteShader();
+		static void InitGSpriteShader();
 
-		static void DrawSprite(const glm::mat4& transform, const SpriteRendererComponent& component, const int entityID = -1);
+	private:
+		static void NextBatch();
+		static void StartBatch();
 
-		static void DrawPBRQuad(const glm::mat4& transform, const QuadRendererComponent& component, const int entityID = -1);
+	public:
+		//Stats
+		struct Statistics
+		{
+			uint32_t DrawCalls = 0;
+			uint32_t QuadCount = 0;
 
-		static void DrawScreenVisibleBuffer(Framebuffer* framebuffer,const int outBufferType, glm::vec3 cameraPos, Ref<Scene> currentScene);
+			inline uint32_t GetVertexCount() const { return QuadCount * 4; }
+			inline uint32_t GetIndexCount() const { return QuadCount * 6; }
+		};
 
-		//static void DrawPBRQuad(const glm::mat4& transform, const QuadRendererComponent& component, const int entityID = -1);
-
+	public:
+		static void ResetStats();
+		static Statistics& GetStats();
 	};
-
 }
-
-

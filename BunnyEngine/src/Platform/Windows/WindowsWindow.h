@@ -1,58 +1,60 @@
 #pragma once
 
 #include "BunnyEngine/Core/Window.h"
-
-#include <GLFW/glfw3.h>
 #include "BunnyEngine/Renderer/GraphicsContext.h"
 
+struct GLFWwindow;
 
-
-namespace BE {
-
-	class WindowsWindow : public Window {
-
+namespace BE
+{
+	class WindowsWindow : public Window
+	{
 	public:
 		WindowsWindow(const WindowProps& props);
 		virtual ~WindowsWindow();
 
 		void OnUpdate() override;
 
-		void SetWindowPos(int windowPosX, int windowPosY) override;
-		void SetWindowSize(int windowSizeX, int windowSizeY) override;
-		void SetWindowIconify() override { glfwIconifyWindow(m_Window); }
-		void SetWindowMaximize() override { glfwMaximizeWindow(m_Window); }
-		void SetWindowRestore() override { glfwRestoreWindow(m_Window); }
+		inline uint32_t GetWidth() const override { return m_Data.Width; }
+		inline uint32_t GetHeight() const override { return m_Data.Height; }
 
-		inline unsigned int GetWidth() const override { return m_Data.Width; }
-		inline unsigned int GetHeight() const override { return m_Data.Height; }
-		inline WindowState GetWindowState() const override { return m_Data.WindowState; }
+		inline virtual void* GetNativeWindow() const override { return m_Window; }
 
 		//Window attributes
-		inline void SetEventCallback(const EventCallbackFn& callback) override { m_Data.EventCallback = callback; }
-		void SetVSync(bool enable) override;
-		bool IsVSync() const override;
+		inline void SetEventCallback(const EventCallbackFn& callback) { m_Data.EventCallback = callback; }
+		virtual void SetVSync(bool enable) override;
+		virtual void SetFocus(bool focus) override;
+		virtual void SetWindowSize(int width, int height) override;
+		virtual void SetWindowMaximized(bool bMaximize) override;
+		virtual void SetWindowPos(int x, int y) override;
+		virtual void SetWindowTitle(const std::string& title) override;
+		virtual void SetWindowIcon(const std::filesystem::path& iconPath) override;
 
-		inline virtual void* GetNativeWindow() const { return m_Window;}
-	private:
-		virtual void Init(const WindowProps& props);
-		virtual void Shutdown();
-	private:
-		GLFWwindow* m_Window;
-		GraphicsContext* m_Context;
+		virtual bool IsVSync() const override { return m_Data.VSync; }
+		virtual glm::vec2 GetWindowSize() const override;
+		virtual bool IsMaximized() const override;
+		virtual glm::vec2 GetWindowPos() const override;
+		virtual const std::string& GetWindowTitle() const override;
 
-		struct WindowData {
+	public:
+		struct WindowData
+		{
 			std::string Title;
-			unsigned int Width, Height;
+			uint32_t Width, Height;
 			bool VSync;
-			WindowState WindowState = WindowState::NORMAL;
 
 			EventCallbackFn EventCallback;
 		};
 
+	private:
+		virtual void Init(const WindowProps& props);
+		virtual void Shutdown();
+
+		virtual void SetupGLFWCallbacks() const;
+
+	private:
+		GLFWwindow* m_Window;
+		Ref<GraphicsContext> m_Context;
 		WindowData m_Data;
-
-		const char* m_IconPath = "Resources/Icons/Common/BunnyIcon.png";
 	};
-
 }
-

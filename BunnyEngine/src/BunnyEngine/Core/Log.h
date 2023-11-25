@@ -28,6 +28,7 @@ namespace BE {
 #define BE_CORE_WARN(...)			::BE::Log::GetCoreLogger()->warn(__VA_ARGS__)
 #define BE_CORE_ERROR(...)			::BE::Log::GetCoreLogger()->error(__VA_ARGS__)
 #define BE_CORE_FATAL(...)			::BE::Log::GetCoreLogger()->fatal(__VA_ARGS__)
+#define BE_CORE_CRITICAL(...)       ::BE::Log::GetCoreLogger()->critical(__VA_ARGS__)
 
 // Client log macros
 #define BE_TRACE(...)			::BE::Log::GetClientLogger()->trace(__VA_ARGS__)
@@ -35,3 +36,4 @@ namespace BE {
 #define BE_WARN(...)			::BE::Log::GetClientLogger()->warn(__VA_ARGS__)
 #define BE_ERROR(...)			::BE::Log::GetClientLogger()->error(__VA_ARGS__)
 #define BE_FATAL(...)			::BE::Log::GetClientLogger()->fatal(__VA_ARGS__)
+#define BE_CORE_CRITICAL(...)   ::BE::Log::GetCoreLogger()->critical(__VA_ARGS__)

@@ -1,31 +1,42 @@
 #pragma once
-#include "Shader.h"
+
+#include <glm/glm.hpp>
 #include "Texture.h"
-#include <variant>
+#include "Shader.h"
 
-namespace BE {
-	using ShaderInputParameter = std::variant<int, float, bool, std::string, glm::vec2, glm::vec3, glm::vec4, glm::mat3, glm::mat4, Ref<Texture2D>>;
-	
-
+namespace BE
+{
 	class Material
 	{
 	public:
-		Material() {};
+		Material() = default;
+		Material(const Material&) = default;
+		Material(Material&&) = default;
 
-		void SetShader(Ref<Shader> shader);
-		Ref<Shader> GetShader() { return m_Shader; }
-		auto GetShaderLibray() { return ShaderLibray::GetShaderLibray(); }
-		void BindShader();
-		void BindShader(glm::mat4 transform);
+		Material(const Ref<Material>& other)
+		: Shader(other->Shader)
+		, DiffuseTexture(other->DiffuseTexture)
+		, SpecularTexture(other->SpecularTexture)
+		, NormalTexture(other->NormalTexture)
+		, TintColor(other->TintColor)
+		, TilingFactor(other->TilingFactor)
+		, Shininess(other->Shininess)
+		{}
 
-	private:
-		void SetParameterMap();
-		
+		Material& operator= (const Material&) = default;
+		Material& operator= (Material&&) = default;
+
+		static Ref<Material> Create() { return MakeRef<Material>(); }
+		static Ref<Material> Create(const Ref<Material>& other) { return MakeRef<Material>(other); }
+
 	public:
-		Ref<Shader> m_Shader;
-		std::vector<ShaderParameter>* m_ShaderParameter;
+		Ref<Shader> Shader;
+		Ref<Texture> DiffuseTexture;
+		Ref<Texture> SpecularTexture;
+		Ref<Texture> NormalTexture;
 
-		std::vector<ShaderInputParameter> m_ShaderParameters;
-
+		glm::vec4 TintColor = glm::vec4(1.0);
+		float TilingFactor = 1.f;
+		float Shininess = 32.f;
 	};
 }

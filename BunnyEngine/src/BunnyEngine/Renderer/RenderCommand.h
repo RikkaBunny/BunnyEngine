@@ -1,44 +1,66 @@
 #pragma once
 
-#include "RendererAPI.h"
+#include "Renderer.h"
+#include "Renderer2D.h"
 
-namespace BE {
-
-	class RenderCommand {
+namespace BE
+{
+	class RenderCommand
+	{
 	public:
-		inline static void Init() {
+		
+		static inline void Init()
+		{
 			s_RendererAPI->Init();
 		}
 
-		inline static void BeginScene() {
-			s_RendererAPI->BeginScene();
-		}
-
-		inline static void DepthLESS() {
-			s_RendererAPI->DepthLESS();
-		}
-
-		inline static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
-			s_RendererAPI->SetViewport( x,  y,  width,  height);
-		}
-
-		inline static void Clear(const glm::vec4& color = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)) {
-			s_RendererAPI->Clear(color);
-		}
-
-		inline static void DrawIndexed(const Ref<VertexArray>& vertexArray) {
-			if (!vertexArray)
-				return;
-			vertexArray->Bind();
+		static inline void DrawIndexed(const Ref<VertexArray>& vertexArray)
+		{
 			s_RendererAPI->DrawIndexed(vertexArray);
 		}
 
-		inline static void Postprocess() {
-			s_RendererAPI->Postprocess();
+		//Draws COUNT elements from Bound VA
+		static inline void DrawIndexed(uint32_t count)
+		{
+			s_RendererAPI->DrawIndexed(count);
+		}
+
+		static inline void DrawLines(const Ref<VertexArray>& vertexArray, uint32_t vertexCount)
+		{
+			s_RendererAPI->DrawLines(vertexArray, vertexCount);
+		}
+
+		static inline void SetClearColor(const glm::vec4& color)
+		{
+			s_RendererAPI->SetClearColor(color);
+		}
+
+		static inline void Clear()
+		{
+			s_RendererAPI->Clear();
+		}
+
+		static inline void ClearDepthBuffer()
+		{
+			s_RendererAPI->ClearDepthBuffer();
+		}
+
+		static inline void SetDepthMask(bool depthMask)
+		{
+			s_RendererAPI->SetDepthMask(depthMask);
+		}
+
+		static inline void SetDepthFunc(DepthFunc func)
+		{
+			s_RendererAPI->SetDepthFunc(func);
+		}
+
+		static inline void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+		{
+			s_RendererAPI->SetViewport(x, y, width, height);
 		}
 
 	private:
-		static RendererAPI* s_RendererAPI;
+		static Ref<RendererAPI> s_RendererAPI;
 	};
-
 }

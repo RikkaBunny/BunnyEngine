@@ -1,399 +1,610 @@
 #include "BEpch.h"
 #include "Renderer2D.h"
+#include "RenderCommand.h"
 
 #include "VertexArray.h"
 #include "Shader.h"
+#include "Material.h"
 
-#include "RenderCommand.h"
-#include "Platform/OpenGL/OpenGLShader.h"
+#include "BunnyEngine/Components/Components.h"
+#include "BunnyEngine/Camera/EditorCamera.h"
 
-#include <glm/gtc/matrix_transform.hpp>
+#include "BunnyEngine/Math/Math.h"
 
-namespace BE {
+namespace BE
+{
+	struct RendererMaterial
+	{
+	public:
+		RendererMaterial() = default;
+		RendererMaterial(const RendererMaterial&) = default;
 
+		RendererMaterial(const Ref<Material>& material)
+		: TintColor(material->TintColor), TilingFactor(material->TilingFactor), Shininess(material->Shininess)
+		{}
 
-	struct Renderer2DStorage {
-		Ref<VertexArray> QuadVertexArray;
-		Ref<Shader> TextureShader;
-		Ref<Shader> ScreenVisibleBuffer;
-		Ref<Texture2D> WhiteTexture;
+		RendererMaterial& operator=(const RendererMaterial&) = default;
+		RendererMaterial& operator=(const Ref<Material>& material)
+		{
+			TintColor = material->TintColor;
+			TilingFactor = material->TilingFactor;
+			Shininess = material->Shininess;
 
+			return *this;
+		}
+	
+	public:
+		glm::vec4 TintColor;
+		float TilingFactor = 1.f;
+		float Shininess = 32.f;
 	};
 
-	struct RendererPlaneStorage {
-		Ref<VertexArray> QuadVertexArray;
-		Ref<Shader> TextureShader;
-		Ref<Texture2D> WhiteTexture;
-		Ref<Texture2D> BlueTexture;
-		Ref<Texture2D> BlackTexture;
+	struct QuadVertex
+	{
+		glm::vec3 Position = glm::vec3{ 0.f };
+		glm::vec3 Normal = glm::vec3{ 0.f };
+		glm::vec3 ModelNormal = glm::vec3{ 0.f };
+		glm::vec3 Tangent = glm::vec3{ 0.f };
+		glm::vec2 TexCoord = glm::vec2{0.f};
+		int EntityID = -1;
+		int DiffuseTextureSlotIndex = -1;
+		int SpecularTextureSlotIndex = -1;
+		int NormalTextureSlotIndex = -1;
+		RendererMaterial Material;
 	};
 
-	static Renderer2DStorage* s_Data;
-	static RendererPlaneStorage* s_PlaneData;
-	//static Ref<Shader> ScreenVisibleBuffer;
+	struct LineVertex
+	{
+		glm::vec3 Position = glm::vec3{ 0.f };
+		glm::vec4 Color = glm::vec4{0.f, 0.f, 0.f, 1.f};
+	};
+
+	struct Renderer2DData
+	{
+		static const uint32_t MaxLines = 5000;
+		static const uint32_t MaxLineVertices = MaxLines * 2;
+		static const uint32_t MaxQuads = 2000;
+		static const uint32_t MaxVertices = MaxQuads * 4;
+		static const uint32_t MaxIndices = MaxQuads * 6;
+		static const uint32_t SkyboxTextureIndex = 0;
+		static const uint32_t BlackTextureIndex = 6;
+		static const uint32_t StartTextureIndex = 6; //2-5 - point shadow map, 1 - dir shadow map, 0 - skybox
+		static const uint32_t MaxTexturesIndex = 31;
+		static const uint32_t DirectionalShadowTextureIndex = 1;
+		static const uint32_t PointShadowTextureIndex = 2; //3, 4, 5
+
+		std::unordered_map<Ref<Texture>, int> BoundTextures;
+
+		Ref<Cubemap> CurrentSkybox;
+		Ref<VertexArray> QuadVertexArray;
+		Ref<VertexBuffer> QuadVertexBuffer;
+		Ref<VertexArray> SkyboxVertexArray;
+		Ref<VertexBuffer> SkyboxVertexBuffer;
+		Ref<VertexArray> LineVertexArray;
+		Ref<VertexBuffer> LineVertexBuffer;
+		Ref<Shader> SpriteShader;
+		Ref<Shader> GSpriteShader;
+		Ref<Shader> SkyboxShader;
+		Ref<Shader> LineShader;
+		Ref<Shader> DirectionalShadowMapShader;
+		Ref<Shader> PointShadowMapShader;
+		Ref<Shader> SpotShadowMapShader;
+		Ref<Shader> CurrentShader;
+
+		QuadVertex* QuadVertexBase = nullptr;
+		QuadVertex* QuadVertexPtr = nullptr;
+		uint32_t IndicesCount = 0;
+
+		LineVertex* LineVertexBase = nullptr;
+		LineVertex* LineVertexPtr = nullptr;
+		uint32_t LineVertexCount = 0;
+
+		uint32_t SkyboxIndicesCount = 0;
+		uint32_t CurrentTextureIndex = StartTextureIndex;
+
+		static constexpr glm::vec4 QuadVertexPosition[4] = { { -0.5f, -0.5f, 0.f, 1.f }, { 0.5f, -0.5f, 0.f, 1.f }, { 0.5f,  0.5f, 0.f, 1.f }, { -0.5f,  0.5f, 0.f, 1.f } };
+		static constexpr glm::vec4 QuadVertexNormal[4] = { { 0.0f,  0.0f, -1.0f, 0.0f }, { 0.0f,  0.0f, -1.0f, 0.0f }, { 0.0f,  0.0f, -1.0f, 0.0f },  { 0.0f,  0.0f, -1.0f, 0.0f } };
+
+		Renderer2D::Statistics Stats;
+		uint32_t FlushCounter = 0;
+		bool bCanRedraw = false;
+		bool bRedrawing = false;
+		bool bDrawingToShadowMap = false;
+	};
+
+	static Renderer2DData s_Data;
+		
 	void Renderer2D::Init()
 	{
-		s_Data = new Renderer2DStorage();
-		s_Data->QuadVertexArray = VertexArray::Create();
-
-		float vertices[4 * 5] = {
-			-0.5f,-0.5f,0.0f, 0.0f,0.0f, 
-			0.5f, -0.5f, 0.0f, 1.0f,0.0f,
-			0.5f, 0.5f, 0.0f, 1.0f,1.0f,
-			-0.5f, 0.5f, 0.0f, 0.0f,1.0f
+		//Init Skybox Data
+		float skyboxVertices[] = {
+			// positions          
+			-1.0f,  1.0f, -1.0f, //0
+			-1.0f, -1.0f, -1.0f, //1
+			 1.0f, -1.0f, -1.0f, //2
+			 1.0f,  1.0f, -1.0f, //3
+			-1.0f, -1.0f,  1.0f, //4
+			-1.0f,  1.0f,  1.0f, //5
+			 1.0f, -1.0f,  1.0f, //6
+			 1.0f,  1.0f,  1.0f, //7
+								 
+		};
+		uint32_t skyboxIndeces[] = 
+		{
+			0, 1, 2,
+			2, 3, 0,
+			4, 1, 0,
+			0, 5, 4,
+			2, 6, 7,
+			7, 3, 2,
+			4, 5, 7,
+			7, 6, 4,
+			7, 0, 3, //Top
+			7, 5, 0, //Top
+			6, 2, 1, //Bottom
+			6, 1, 4	 //Bottom
 		};
 
-		Ref<VertexBuffer> m_VertexBuffer = VertexBuffer::Create(vertices, sizeof(vertices));
+		s_Data.SkyboxIndicesCount = sizeof(skyboxIndeces) / sizeof(uint32_t);
+		Ref<IndexBuffer> skyboxIndexBuffer;
+		skyboxIndexBuffer = IndexBuffer::Create(skyboxIndeces, s_Data.SkyboxIndicesCount);
 
-		BufferLayout layout = {
-			{ShaderDataType::Float3, "a_Position"},
-			{ShaderDataType::Float2, "a_TexCoord"}
+		BufferLayout skyboxLayout =
+		{
+			{ShaderDataType::Float3, "a_Position"}
 		};
 
-		m_VertexBuffer->SetLayout(layout);
-		s_Data->QuadVertexArray->AddVertexBuffer(m_VertexBuffer);
+		s_Data.SkyboxVertexBuffer = VertexBuffer::Create(skyboxVertices, sizeof(skyboxVertices));
+		s_Data.SkyboxVertexBuffer->SetLayout(skyboxLayout);
 
-		uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
+		s_Data.SkyboxVertexArray = VertexArray::Create();
+		s_Data.SkyboxVertexArray->AddVertexBuffer(s_Data.SkyboxVertexBuffer);
+		s_Data.SkyboxVertexArray->SetIndexBuffer(skyboxIndexBuffer);
 
-		Ref<IndexBuffer> m_IndexBuffer = IndexBuffer::Create(indices, sizeof(indices) / sizeof(uint32_t));
-		s_Data->QuadVertexArray->SetIndexBuffer(m_IndexBuffer);
-		
-		s_Data->WhiteTexture = Texture2D::Create(1, 1);
-		uint32_t whiteTextureData = 0xffffffff;
-		s_Data->WhiteTexture->SetData(&whiteTextureData, sizeof(uint32_t));
+		s_Data.SkyboxShader = ShaderLibrary::GetOrLoad("assets/shaders/SkyboxShader.glsl");
+		s_Data.SkyboxVertexArray->Unbind();
 
-		//s_Data->ScreenVisibleBuffer = Shader::Create("Assets/shaders/ScreenVisibleBuffer.glsl");
-		s_Data->ScreenVisibleBuffer = Shader::Create("Assets/shaders/DeferredPBRRenderer.glsl");
+		//Init Quad Data
+		uint32_t* quadIndeces = new uint32_t[s_Data.MaxIndices];
 
-		s_Data->TextureShader = Shader::Create("Assets/shaders/Texture.glsl");
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetInt("u_Texture", 0);
-		InitQuad();
-	}
+		uint32_t offset = 0;
+		for (uint32_t i = 0; i < s_Data.MaxIndices; i += 6u)
+		{
+			quadIndeces[i + 0] = offset + 2; //0
+			quadIndeces[i + 1] = offset + 1; //1
+			quadIndeces[i + 2] = offset + 0; //2
+			
+			quadIndeces[i + 3] = offset + 0; //2 
+			quadIndeces[i + 4] = offset + 3; //3
+			quadIndeces[i + 5] = offset + 2; //0
 
-	void Renderer2D::InitQuad()
-	{
-		s_PlaneData = new RendererPlaneStorage();
-		s_PlaneData->QuadVertexArray = VertexArray::Create();
+			offset += 4;
+		}
 
-		float vertices[4 * 11] = {
-			-0.5f,-0.5f,0.0f, 0.0f,0.0f,1.0f, 0.0f,0.0f, 0.707107f,0.707107f,0.0f,
-			0.5f, -0.5f, 0.0f, 0.0f,0.0f,1.0f, 1.0f,0.0f, -0.707107f,0.707107f,0.0f,
-			0.5f, 0.5f, 0.0f, 0.0f,0.0f,1.0f, 1.0f,1.0f, -0.707107f,-0.707107f,0.0f,
-			-0.5f, 0.5f, 0.0f, 0.0f,0.0f,1.0f, 0.0f,1.0f, 0.707107f,-0.707107f,0.0f
-		};
+		Ref<IndexBuffer> quadIndexBuffer;
+		quadIndexBuffer = IndexBuffer::Create(quadIndeces, s_Data.MaxIndices);
+		delete[] quadIndeces;
 
-		Ref<VertexBuffer> m_VertexBuffer = VertexBuffer::Create(vertices, sizeof(vertices));
-
-		BufferLayout layout = {
+		BufferLayout quadLayout =
+		{
 			{ShaderDataType::Float3, "a_Position"},
 			{ShaderDataType::Float3, "a_Normal"},
+			{ShaderDataType::Float3, "a_ModelNormal"},
+			{ShaderDataType::Float3, "a_Tangent"},
 			{ShaderDataType::Float2, "a_TexCoord"},
-			{ShaderDataType::Float3, "a_Tangent"}
+			{ShaderDataType::Int,	 "a_EntityID"},
+			{ShaderDataType::Int,	 "a_DiffuseTextureIndex"},
+			{ShaderDataType::Int,	 "a_SpecularTextureIndex"},
+			{ShaderDataType::Int,	 "a_NormalTextureIndex"},
+			//Material
+			{ShaderDataType::Float4, "a_TintColor"},
+			{ShaderDataType::Float,	 "a_TilingFactor"},
+			{ShaderDataType::Float, "a_MaterialShininess"},
 		};
 
-		m_VertexBuffer->SetLayout(layout);
-		s_PlaneData->QuadVertexArray->AddVertexBuffer(m_VertexBuffer);
+		BufferLayout lineLayout =
+		{
+			{ShaderDataType::Float3, "a_Position"},
+			{ShaderDataType::Float4, "a_Color"},
+		};
+		
+		s_Data.QuadVertexBuffer = VertexBuffer::Create(sizeof(QuadVertex) * s_Data.MaxVertices);
+		s_Data.QuadVertexBuffer->SetLayout(quadLayout);
 
-		uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
+		s_Data.QuadVertexArray = VertexArray::Create();
+		s_Data.QuadVertexArray->AddVertexBuffer(s_Data.QuadVertexBuffer);
+		s_Data.QuadVertexArray->SetIndexBuffer(quadIndexBuffer);
+		s_Data.QuadVertexArray->Unbind();
 
-		Ref<IndexBuffer> m_IndexBuffer = IndexBuffer::Create(indices, sizeof(indices) / sizeof(uint32_t));
-		s_PlaneData->QuadVertexArray->SetIndexBuffer(m_IndexBuffer);
+		s_Data.QuadVertexBase = new QuadVertex[s_Data.MaxVertices];
 
-		s_PlaneData->WhiteTexture = Texture2D::Create(1, 1);
-		uint32_t whiteTextureData = 0xffffffff;
-		s_PlaneData->WhiteTexture->SetData(&whiteTextureData, sizeof(uint32_t));
+		s_Data.LineVertexArray = VertexArray::Create();
+		s_Data.LineVertexBuffer = VertexBuffer::Create(sizeof(LineVertex) * s_Data.MaxVertices);
+		s_Data.LineVertexBuffer->SetLayout(lineLayout);
+		s_Data.LineVertexArray->AddVertexBuffer(s_Data.LineVertexBuffer);
+		s_Data.LineVertexBase = new LineVertex[s_Data.MaxLineVertices];
+		
+		s_Data.DirectionalShadowMapShader = ShaderLibrary::GetOrLoad("assets/shaders/SpriteDirectionalShadowMapShader.glsl");
+		s_Data.PointShadowMapShader = ShaderLibrary::GetOrLoad("assets/shaders/SpritePointShadowMapShader.glsl");
+		s_Data.SpotShadowMapShader = ShaderLibrary::GetOrLoad("assets/shaders/SpriteSpotShadowMapShader.glsl");
 
-		s_PlaneData->TextureShader = Shader::Create("Assets/shaders/DeferredPBR.glsl");
-		s_PlaneData->TextureShader->Bind();
-		s_PlaneData->TextureShader->SetInt("u_AlbedoTexture", 0);
-		s_PlaneData->TextureShader->SetInt("u_NormalTexture", 1);
-		s_PlaneData->TextureShader->SetInt("u_MetallicTexture", 2);
-		s_PlaneData->TextureShader->SetInt("u_RoughnessTexture", 3);
-		s_PlaneData->TextureShader->SetInt("u_AoTexture", 4);
-		//return s_Data;
+		s_Data.GSpriteShader = ShaderLibrary::GetOrLoad("assets/shaders/SpriteGShader.glsl");
+		InitGSpriteShader();
+		s_Data.GSpriteShader->BindOnReload(&Renderer2D::InitGSpriteShader);
+
+		s_Data.SpriteShader = ShaderLibrary::GetOrLoad("assets/shaders/SpriteShader.glsl");
+		InitSpriteShader();
+		s_Data.SpriteShader->BindOnReload(&Renderer2D::InitSpriteShader);
+
+		s_Data.LineShader = ShaderLibrary::GetOrLoad("assets/shaders/LineShader.glsl");
+
+		s_Data.BoundTextures.reserve(32);
 	}
 
 	void Renderer2D::Shutdown()
 	{
-		delete s_Data;
+		delete[] s_Data.QuadVertexBase;
 	}
 
-	void Renderer2D::BeginScene(const Camera& camera, const glm::mat4& transform)
+	void Renderer2D::BeginScene(const RenderInfo& renderInfo)
 	{
-		RenderCommand::BeginScene();
+		s_Data.FlushCounter = 0;
+		s_Data.bRedrawing = s_Data.bCanRedraw && renderInfo.bRedraw;
+		s_Data.bDrawingToShadowMap = (renderInfo.drawTo == DrawTo::DirectionalShadowMap) || (renderInfo.drawTo == DrawTo::PointShadowMap) || (renderInfo.drawTo == DrawTo::SpotShadowMap);
+		if (renderInfo.drawTo == DrawTo::DirectionalShadowMap)
+			s_Data.CurrentShader = s_Data.DirectionalShadowMapShader;
+		else if (renderInfo.drawTo == DrawTo::PointShadowMap)
+		{
+			s_Data.CurrentShader = s_Data.PointShadowMapShader;
+			s_Data.CurrentShader->Bind();
+			s_Data.CurrentShader->SetInt("u_PointLightIndex", renderInfo.pointLightIndex);
+		}
+		else if (renderInfo.drawTo == DrawTo::SpotShadowMap)
+		{
+			s_Data.CurrentShader = s_Data.SpotShadowMapShader;
+			s_Data.CurrentShader->Bind();
+			s_Data.CurrentShader->SetInt("u_SpotLightIndex", renderInfo.pointLightIndex);
+		}
+		else if (renderInfo.drawTo == DrawTo::GBuffer)
+		{
+			s_Data.CurrentShader = s_Data.GSpriteShader;
+		}
+		else
+		{
+			s_Data.CurrentShader = s_Data.SpriteShader;
+			s_Data.SkyboxShader->Bind();
+			s_Data.SkyboxShader->SetInt("u_Skybox", s_Data.SkyboxTextureIndex);
+			s_Data.CurrentShader->Bind();
+			s_Data.CurrentShader->SetInt("u_SkyboxEnabled", 0);
+		}
 
-		glm::mat4 viewProj = camera.GetProjection() * glm::inverse(transform);
-
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetMat4("u_ViewProjection", viewProj);
-		s_PlaneData->TextureShader->Bind();
-		s_PlaneData->TextureShader->SetMat4("u_ViewProjection", viewProj);
+		if (s_Data.bRedrawing)
+		{
+			s_Data.QuadVertexArray->Bind();
+			s_Data.QuadVertexBuffer->Bind();
+		}
+		else
+			StartBatch();
 	}
 
-	void Renderer2D::BeginScene(const EditorCamera& camera)
+	void Renderer2D::InitSpriteShader()
 	{
-		RenderCommand::BeginScene();
+		int32_t samplers[32];
+		for (int i = 0; i < 32; ++i)
+		{
+			samplers[i] = i;
+		}
+		samplers[0] = 1; //Because 0 - is cubemap (samplerCube)
+		samplers[2] = 1; //Because 2 - is cubemap (pointShadowMap)
+		samplers[3] = 1; //Because 3 - is cubemap (pointShadowMap)
+		samplers[4] = 1; //Because 4 - is cubemap (pointShadowMap)
+		samplers[5] = 1; //Because 5 - is cubemap (pointShadowMap)
 
-		glm::mat4 viewProj = camera.GetViewProjection();
+		int32_t cubeSamplers[4];
+		for (int i = 0; i < 4; ++i)
+			cubeSamplers[i] = s_Data.PointShadowTextureIndex + i;
 
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetMat4("u_ViewProjection", viewProj);
-		s_PlaneData->TextureShader->Bind();
-		s_PlaneData->TextureShader->SetMat4("u_ViewProjection", viewProj);
+		s_Data.SpriteShader->Bind();
+		s_Data.SpriteShader->SetIntArray("u_Textures", samplers, sizeof(samplers));
+		s_Data.SpriteShader->SetIntArray("u_PointShadowCubemaps", cubeSamplers, MAXPOINTLIGHTS);
+		s_Data.SpriteShader->SetInt("u_Skybox", s_Data.SkyboxTextureIndex);
+		s_Data.SpriteShader->SetInt("u_ShadowMap", s_Data.DirectionalShadowTextureIndex);
 	}
 
-	void Renderer2D::BeginScene(const OrthographicCamera& camera)
+	void Renderer2D::InitGSpriteShader()
 	{
-		RenderCommand::BeginScene();
+		int32_t samplers[32];
+		for (int i = 0; i < 32; ++i)
+		{
+			samplers[i] = i;
+		}
+		samplers[0] = 1; //Because 0 - is cubemap (samplerCube)
+		samplers[2] = 1; //Because 2 - is cubemap (pointShadowMap)
+		samplers[3] = 1; //Because 3 - is cubemap (pointShadowMap)
+		samplers[4] = 1; //Because 4 - is cubemap (pointShadowMap)
+		samplers[5] = 1; //Because 5 - is cubemap (pointShadowMap)
 
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
-	}
-	void Renderer2D::BeginScene(const glm::mat4 viewProjectionMatrix)
-	{
-		RenderCommand::BeginScene();
-
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetMat4("u_ViewProjection", viewProjectionMatrix);
-		s_PlaneData->TextureShader->Bind();
-		s_PlaneData->TextureShader->SetMat4("u_ViewProjection", viewProjectionMatrix);
+		s_Data.GSpriteShader->Bind();
+		s_Data.GSpriteShader->SetIntArray("u_Textures", samplers, sizeof(samplers));
 	}
 
 	void Renderer2D::EndScene()
 	{
+		Flush();
+		DrawCurrentSkybox();
+		s_Data.CurrentSkybox.reset();
+		s_Data.bCanRedraw = s_Data.FlushCounter == 1;
 	}
 
-	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)
+	void Renderer2D::Flush()
 	{
-		DrawQuad({ position.x, position.y, 0.0f }, size, color);
-	}
-
-	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
-	{
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetFloat4("u_Color", color);
-		s_Data->TextureShader->SetFloat2("u_TexTiling", glm::vec2(1.0f)); 
-		s_Data->WhiteTexture->Bind();
-
-		glm::mat4 worldTransform = glm::translate(glm::mat4(1.0f), position) * /*rotaion*/ glm::scale(glm::mat4(1.0f), { size.x,size.y,1.0f });
-		s_Data->TextureShader->SetMat4("u_WorldTransform", worldTransform);
-
-		s_Data->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
-	}
-	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const Ref<Texture2D> texture, const glm::vec4& color, const glm::vec2& TexTiling)
-	{
-		DrawQuad({ position.x, position.y, 0.0f }, size, texture, color, TexTiling);
-	}
-	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const Ref<Texture2D> texture, const glm::vec4& color, const glm::vec2& TexTiling)
-	{
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetFloat4("u_Color", color);
-		s_Data->TextureShader->SetFloat2("u_TexTiling", TexTiling);
-		texture->Bind();
-
-		glm::mat4 worldTransform = glm::translate(glm::mat4(1.0f), position) * /*rotaion*/ glm::scale(glm::mat4(1.0f), { size.x,size.y,1.0f });
-		s_Data->TextureShader->SetMat4("u_WorldTransform", worldTransform);
-
-		s_Data->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
-	}
-	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, float rotation, const glm::vec4& color)
-	{
-		DrawQuad({ position.x, position.y, 0.0f }, size, rotation, color);
-	}
-	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, float rotation, const glm::vec4& color)
-	{
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetFloat4("u_Color", color);
-		s_Data->TextureShader->SetFloat2("u_TexTiling", glm::vec2(1.0f));
-		s_Data->WhiteTexture->Bind();
-
-		glm::mat4 worldTransform = glm::translate(glm::mat4(1.0f), position) 
-			* glm::rotate(glm::mat4(1.0f), rotation, {0.0f, 0.0f, 1.0f})
-			* glm::scale(glm::mat4(1.0f), { size.x,size.y,1.0f });
-		s_Data->TextureShader->SetMat4("u_WorldTransform", worldTransform);
-
-		s_Data->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
-	}
-	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, float rotation, const Ref<Texture2D> texture, const glm::vec4& color, const glm::vec2& TexTiling)
-	{
-		DrawQuad({ position.x, position.y, 0.0f }, size, rotation, texture, color, TexTiling);
-	}
-	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, float rotation, const Ref<Texture2D> texture, const glm::vec4& color, const glm::vec2& TexTiling)
-	{
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetFloat4("u_Color", color);
-		s_Data->TextureShader->SetFloat2("u_TexTiling", TexTiling);
-		texture->Bind();
-
-		glm::mat4 worldTransform = glm::translate(glm::mat4(1.0f), position)
-			* glm::rotate(glm::mat4(1.0f), rotation, { 0.0f, 0.0f, 1.0f })
-			* glm::scale(glm::mat4(1.0f), { size.x,size.y,1.0f });
-		s_Data->TextureShader->SetMat4("u_WorldTransform", worldTransform);
-
-		s_Data->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
-	}
-	void Renderer2D::DrawQuad(const glm::mat4& transform, const glm::vec4& color)
-	{
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetFloat4("u_Color", color);
-		s_Data->TextureShader->SetFloat2("u_TexTiling", glm::vec2(1.0f));
-		s_Data->WhiteTexture->Bind();
-
-		glm::mat4 worldTransform = transform;
-		s_Data->TextureShader->SetMat4("u_WorldTransform", worldTransform);
-
-		s_Data->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
-	}
-	void Renderer2D::DrawQuad(const glm::mat4& transform, const Ref<Texture2D> texture, const glm::vec4& color, const glm::vec2& TexTiling)
-	{
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetFloat4("u_Color", color);
-		s_Data->TextureShader->SetFloat2("u_TexTiling", TexTiling);
-		texture->Bind();
-
-		glm::mat4 worldTransform = transform;
-		s_Data->TextureShader->SetMat4("u_WorldTransform", worldTransform);
-
-		s_Data->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
-	}
-
-	void Renderer2D::DrawSprite(const glm::mat4& transform, const SpriteRendererComponent& component, const int entityID)
-	{
-		s_Data->TextureShader->Bind();
-		s_Data->TextureShader->SetFloat4("u_Color", component.Color);
-		s_Data->TextureShader->SetFloat2("u_TexTiling", glm::vec2(component.Tiling));
-		s_Data->TextureShader->SetInt("u_EntityID", entityID);
-		if (component.Texture) {
-			component.Texture->Bind();
-		}
-		else
+		if (s_Data.IndicesCount != 0)
 		{
-			s_Data->WhiteTexture->Bind();
+			uint32_t dataSize = (uint32_t)((uint8_t*)s_Data.QuadVertexPtr - (uint8_t*)s_Data.QuadVertexBase);
+			s_Data.QuadVertexArray->Bind();
+			s_Data.QuadVertexBuffer->Bind();
+
+			if (!s_Data.bRedrawing)
+				s_Data.QuadVertexBuffer->SetData(s_Data.QuadVertexBase, dataSize);
+			s_Data.CurrentShader->Bind();
+
+			for (auto& it : s_Data.BoundTextures)
+			{
+				it.first->Bind(it.second);
+			}
+
+			RenderCommand::DrawIndexed(s_Data.IndicesCount);
+
+			++s_Data.Stats.DrawCalls;
+			++s_Data.FlushCounter;
 		}
 
-		s_Data->TextureShader->SetMat4("u_WorldTransform", transform);
-
-		s_Data->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
+		DrawLines();
 	}
 
-	void Renderer2D::DrawPBRQuad(const glm::mat4& transform, const QuadRendererComponent& component, const int entityID)
+	bool Renderer2D::IsRedrawing()
 	{
-		s_PlaneData->TextureShader->Bind();
-		s_PlaneData->TextureShader->SetFloat4("u_Color", component.Color);
-		s_PlaneData->TextureShader->SetFloat2("u_TexTiling", glm::vec2(component.Tiling));
-		s_PlaneData->TextureShader->SetFloat("u_Metallic", component.Metallic);
-		s_PlaneData->TextureShader->SetFloat("u_Roughness", component.Roughness);
-		s_PlaneData->TextureShader->SetFloat("u_Emissive", component.Emissive);
-		s_PlaneData->TextureShader->SetInt("u_EntityID", entityID);
-		if (component.u_AlbedoTexture) {
-			component.u_AlbedoTexture->Bind(0);
-		}
-		else
-		{
-			s_PlaneData->WhiteTexture->Bind(0);
-		}
-
-		if (component.u_RoughnessTexture) {
-			component.u_RoughnessTexture->Bind(3);
-		}
-		else
-		{
-			s_PlaneData->WhiteTexture->Bind(3);
-		}
-
-		if (component.u_AoTexture) {
-			component.u_AoTexture->Bind(4);
-		}
-		else
-		{
-			s_PlaneData->WhiteTexture->Bind(4);
-		}
-		//s_Data->WhiteTexture = Texture2D::Create(1, 1);
-		//uint32_t blueTextureData = 0x0000ffff;
-		//s_Data->WhiteTexture->SetData(&blueTextureData, sizeof(uint32_t));
-		if (component.u_NormalTexture) {
-			component.u_NormalTexture->Bind(1);
-		}
-		else
-		{
-			s_PlaneData->WhiteTexture->Bind(1);
-		}
-		//s_Data->WhiteTexture = Texture2D::Create(1, 1);
-		//uint32_t blackTextureData = 0x000000ff;
-		//s_Data->WhiteTexture->SetData(&blackTextureData, sizeof(uint32_t));
-		if (component.u_MetallicTexture) {
-			component.u_MetallicTexture->Bind(2);
-		}
-		else
-		{
-			s_PlaneData->WhiteTexture->Bind(2);
-		}
-
-		s_PlaneData->TextureShader->SetMat4("u_WorldTransform", transform);
-
-		s_PlaneData->QuadVertexArray->Bind();
-		RenderCommand::DrawIndexed(s_PlaneData->QuadVertexArray);
+		return s_Data.bRedrawing;
 	}
 
-	void Renderer2D::DrawScreenVisibleBuffer(Framebuffer* framebuffer, const int outBufferType, glm::vec3 cameraPos, Ref<Scene> currentScene)
+	void Renderer2D::NextBatch()
 	{
-		auto lut = Texture2D::Create("Assets/IBL/BRDFLUT.hdr");
-		if (outBufferType == 0) {
-			//s_Data->ScreenVisibleBuffer = Shader::Create("Assets/shaders/ScreenVisibleBuffer.glsl");
-			s_Data->ScreenVisibleBuffer = Shader::Create("Assets/shaders/DeferredPBRRenderer.glsl");
-			//s_Data->ScreenVisibleBuffer = Shader::Create("Assets/shaders/PBR.glsl");
+		Flush();
+		StartBatch();
+	}
+
+	void Renderer2D::StartBatch()
+	{
+		s_Data.IndicesCount = 0;
+		s_Data.QuadVertexPtr = s_Data.QuadVertexBase;
+		s_Data.BoundTextures.clear();
+		s_Data.CurrentTextureIndex = s_Data.StartTextureIndex;
+
+		ResetLinesData();
+	}
+
+	void Renderer2D::DrawQuad(const Transform& transform, const Ref<Material>& material, int entityID)
+	{
+		glm::mat4 transformMatrix = Math::ToTransformMatrix(transform);
+
+		DrawQuad(transformMatrix, material, entityID);
+	}
+
+	void Renderer2D::DrawQuad(const Transform& transform, const Ref<SubTexture2D>& subtexture, const TextureProps& textureProps, int entityID)
+	{
+		glm::mat4 transformMatrix = Math::ToTransformMatrix(transform);
+
+		DrawQuad(transformMatrix, subtexture, textureProps, entityID);
+	}
+
+	void Renderer2D::DrawSkybox(const Ref<Cubemap>& cubemap)
+	{
+		s_Data.CurrentSkybox = cubemap;
+		s_Data.CurrentSkybox->Bind(s_Data.SkyboxTextureIndex);
+
+		s_Data.CurrentShader->Bind();
+		s_Data.CurrentShader->SetInt("u_SkyboxEnabled", 1);
+	}
+
+	void Renderer2D::DrawDebugLine(const glm::vec3& start, const glm::vec3& end, const glm::vec4& color)
+	{
+		if (s_Data.LineVertexCount >= (s_Data.MaxLineVertices - 2))
+		{
+			DrawLines();
+			ResetLinesData();
 		}
-		else {
-			s_Data->ScreenVisibleBuffer = Shader::Create("Assets/shaders/ScreenVisibleBuffer.glsl");
-			//s_Data->ScreenVisibleBuffer = Shader::Create("Assets/shaders/DeferredPBRRenderer.glsl");
+
+		s_Data.LineVertexPtr->Position = start;
+		s_Data.LineVertexPtr->Color = color;
+		++s_Data.LineVertexPtr;
+
+		s_Data.LineVertexPtr->Position = end;
+		s_Data.LineVertexPtr->Color = color;
+		++s_Data.LineVertexPtr;
+
+		s_Data.LineVertexCount += 2;
+	}
+
+	void Renderer2D::DrawQuad(const glm::mat4& transform, const Ref<Material>& material, int entityID)
+	{
+		if (s_Data.IndicesCount >= Renderer2DData::MaxIndices)
+			NextBatch();
+
+		if ((int)s_Data.MaxTexturesIndex - (int)s_Data.CurrentTextureIndex < 3)
+			NextBatch();
+
+		constexpr glm::vec2 texCoords[4] = { {0.0f, 0.0f}, { 1.f, 0.f }, { 1.f, 1.f }, { 0.f, 1.f } };
+
+		int diffuseTextureIndex = -1;
+		int specularTextureIndex = -1;
+		int normalTextureIndex = -1;
+
+		if (material->DiffuseTexture)
+		{
+			auto itDiffuse = s_Data.BoundTextures.find(material->DiffuseTexture);
+			if (itDiffuse != s_Data.BoundTextures.end())
+				diffuseTextureIndex = itDiffuse->second;
+			else
+			{
+				diffuseTextureIndex = s_Data.CurrentTextureIndex++;
+				s_Data.BoundTextures[material->DiffuseTexture] = diffuseTextureIndex;
+			}
 		}
-		s_Data->ScreenVisibleBuffer->Bind();
-		s_Data->ScreenVisibleBuffer->SetUniformBuffer("LightDirection");
-		s_Data->ScreenVisibleBuffer->SetInt("u_OutBufferType", outBufferType);
-		s_Data->ScreenVisibleBuffer->SetInt("u_GBufferA", 0);
-		s_Data->ScreenVisibleBuffer->SetInt("u_GBufferB", 1);
-		s_Data->ScreenVisibleBuffer->SetInt("u_GBufferC", 2);
-		s_Data->ScreenVisibleBuffer->SetInt("u_GBufferD", 3);
-		s_Data->ScreenVisibleBuffer->SetInt("u_DepthBuffer", 4);
+
+		if (material->SpecularTexture)
+		{
+			auto itSpecular = s_Data.BoundTextures.find(material->SpecularTexture);
+			if (itSpecular != s_Data.BoundTextures.end())
+				specularTextureIndex = itSpecular->second;
+			else
+			{
+				specularTextureIndex = s_Data.CurrentTextureIndex++;
+				s_Data.BoundTextures[material->SpecularTexture] = specularTextureIndex;
+			}
+		}
+
+		if (material->NormalTexture)
+		{
+			auto itNormal = s_Data.BoundTextures.find(material->NormalTexture);
+			if (itNormal != s_Data.BoundTextures.end())
+				normalTextureIndex = itNormal->second;
+			else
+			{
+				normalTextureIndex = s_Data.CurrentTextureIndex++;
+				s_Data.BoundTextures[material->NormalTexture] = normalTextureIndex;
+			}
+		}
+
+		glm::vec3 myNormal = glm::mat3(glm::transpose(glm::inverse(transform))) * s_Data.QuadVertexNormal[0];
+
+		constexpr glm::vec3 edge1 = s_Data.QuadVertexPosition[1] - s_Data.QuadVertexPosition[0];
+		constexpr glm::vec3 edge2 = s_Data.QuadVertexPosition[2] - s_Data.QuadVertexPosition[0];
+		constexpr glm::vec2 deltaUV1 = texCoords[1] - texCoords[0];
+		constexpr glm::vec2 deltaUV2 = texCoords[2] - texCoords[0];
+		constexpr float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+
+		constexpr glm::vec3 tangent = glm::vec3(f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x), 
+									  f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y), 
+									  f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z));
+		glm::vec3 myTangent = glm::normalize(tangent);
+		myTangent = glm::normalize(transform * glm::vec4(myTangent, 0.f));
+		glm::vec3 modelNormal = glm::normalize(transform * s_Data.QuadVertexNormal[0]);
+
+		for (int i = 0; i < 4; ++i)
+		{
+			s_Data.QuadVertexPtr->Position = transform * s_Data.QuadVertexPosition[i];
+			s_Data.QuadVertexPtr->Normal = myNormal;
+			s_Data.QuadVertexPtr->ModelNormal = modelNormal;
+			s_Data.QuadVertexPtr->Tangent = myTangent;
+			s_Data.QuadVertexPtr->TexCoord = texCoords[i];
+			s_Data.QuadVertexPtr->EntityID = entityID;
+			s_Data.QuadVertexPtr->DiffuseTextureSlotIndex = diffuseTextureIndex;
+			s_Data.QuadVertexPtr->SpecularTextureSlotIndex = specularTextureIndex;
+			s_Data.QuadVertexPtr->NormalTextureSlotIndex = normalTextureIndex;
+			s_Data.QuadVertexPtr->Material = material;
+			++s_Data.QuadVertexPtr;
+		}
+
+		s_Data.IndicesCount += 6;
+
+		++s_Data.Stats.QuadCount;
+	}
+
+	void Renderer2D::DrawQuad(const glm::mat4& transform, const Ref<SubTexture2D>& subtexture, const TextureProps& textureProps, int entityID)
+	{
+		if (s_Data.IndicesCount >= Renderer2DData::MaxIndices)
+			NextBatch();
+
+		static const glm::vec2 emptyTextureCoords[4] = { {0, 0}, {0, 0}, {0, 0}, {0, 0} };
+		const glm::vec2* texCoords = emptyTextureCoords;
+
+		int textureIndex = -1;
 		
-		s_Data->ScreenVisibleBuffer->SetFloat3("cameraPos", cameraPos);
-		framebuffer->BindAttachment(0, 0);
-		framebuffer->BindAttachment(1, 1);
-		framebuffer->BindAttachment(2, 2);
-		framebuffer->BindAttachment(3, 3);
-		framebuffer->BindAttachment(0, 4, true); 
-
-		if (currentScene->GetCurrentScneneIBL()) {
-			s_Data->ScreenVisibleBuffer->SetInt("u_irradianceMap", 5);
-			s_Data->ScreenVisibleBuffer->SetInt("u_PrefilterMap", 6);
-
-			currentScene->GetCurrentScneneIBL()->BindEnvIrradianceCubeMap(5);
-			currentScene->GetCurrentScneneIBL()->BindPrefilteredCubeMap(6);
-
+		if (subtexture)
+		{
+			texCoords = subtexture->GetTexCoords();
+			const Ref<Texture2D>& texture = subtexture->GetTexture();
+			auto itTexture = s_Data.BoundTextures.find(texture);
+			if (itTexture != s_Data.BoundTextures.end())
+				textureIndex = itTexture->second;
+			else
+			{
+				if (s_Data.CurrentTextureIndex > s_Data.MaxTexturesIndex)
+					NextBatch();
+				textureIndex = s_Data.CurrentTextureIndex++;
+				s_Data.BoundTextures[texture] = textureIndex;
+			}
 		}
-		s_Data->ScreenVisibleBuffer->SetInt("u_BRDFLUT", 7);
-		lut->Bind(7);
-		
-		//if (buffer) {
-		//	buffer->Bind();
-		//}
-		//else
-		//{
-		//	s_Data->WhiteTexture->Bind();
-		//}
-		//s_Data->WhiteTexture->Bind();
-		s_Data->QuadVertexArray->Bind();
 
-		RenderCommand::DrawIndexed(s_Data->QuadVertexArray);
+		glm::vec3 myNormal = glm::mat3(glm::transpose(glm::inverse(transform))) * s_Data.QuadVertexNormal[0];
+		glm::vec3 modelNormal = glm::normalize(transform * s_Data.QuadVertexNormal[0]);
+		glm::vec4 myTangent(1.0, 0.0, 0.0, 0.0);
+		myTangent = glm::normalize(transform * myTangent);
+
+		for (int i = 0; i < 4; ++i)
+		{
+			s_Data.QuadVertexPtr->Position = transform * s_Data.QuadVertexPosition[i];
+			s_Data.QuadVertexPtr->Normal = myNormal;
+			s_Data.QuadVertexPtr->ModelNormal = modelNormal;
+			s_Data.QuadVertexPtr->Tangent = myTangent;
+			s_Data.QuadVertexPtr->TexCoord = texCoords[i];
+			s_Data.QuadVertexPtr->EntityID = entityID;
+			s_Data.QuadVertexPtr->DiffuseTextureSlotIndex = textureIndex;
+			s_Data.QuadVertexPtr->SpecularTextureSlotIndex = -1;
+			s_Data.QuadVertexPtr->NormalTextureSlotIndex = -1;
+			s_Data.QuadVertexPtr->Material.TintColor = textureProps.TintColor;
+			s_Data.QuadVertexPtr->Material.TilingFactor = textureProps.TilingFactor;
+			s_Data.QuadVertexPtr->Material.Shininess = 32.f;
+			++s_Data.QuadVertexPtr;
+		}
+
+		s_Data.IndicesCount += 6;
+
+		++s_Data.Stats.QuadCount;
 	}
 
+	void Renderer2D::DrawCurrentSkybox()
+	{
+		if (s_Data.CurrentSkybox)
+		{
+			RenderCommand::SetDepthFunc(DepthFunc::LEQUAL);
+			s_Data.SkyboxVertexArray->Bind();
+			s_Data.SkyboxShader->Bind();
+			RenderCommand::DrawIndexed(s_Data.SkyboxIndicesCount);
+			RenderCommand::SetDepthFunc(DepthFunc::LESS);
+			s_Data.SkyboxVertexArray->Unbind();
+			++s_Data.Stats.DrawCalls;
+		}
+	}
 
+	void Renderer2D::DrawLines()
+	{
+		if (s_Data.LineVertexCount)
+		{
+			uint32_t dataSize = (uint32_t)((uint8_t*)s_Data.LineVertexPtr - (uint8_t*)s_Data.LineVertexBase);
+			s_Data.LineVertexArray->Bind();
+			s_Data.LineVertexBuffer->Bind();
+			s_Data.LineVertexBuffer->SetData(s_Data.LineVertexBase, dataSize);
+			s_Data.LineShader->Bind();
+			RenderCommand::DrawLines(s_Data.LineVertexArray, s_Data.LineVertexCount);
+			++s_Data.Stats.DrawCalls;
+		}
+	}
+
+	void Renderer2D::ResetLinesData()
+	{
+		s_Data.LineVertexCount = 0;
+		s_Data.LineVertexPtr = s_Data.LineVertexBase;
+	}
+
+	void Renderer2D::ResetStats()
+	{
+		memset(&s_Data.Stats, 0, sizeof(Renderer2D::Statistics));
+	}
+	
+	Renderer2D::Statistics& Renderer2D::GetStats()
+	{
+		return s_Data.Stats;
+	}
 }
+

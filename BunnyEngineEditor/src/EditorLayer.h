@@ -1,45 +1,86 @@
 #pragma once
 
 #include "BunnyEngine.h"
-#include "Panels/DockSpace.h"
-#include "Panels/NodeEditorPanel.h"
-# include "../imgui-node-editor/imgui_node_editor.h"
+#include "Panels/SceneHierarchyPanel.h"
+#include "Panels/ContentBrowserPanel.h"
+#include "EditorSerializer.h"
+#include <filesystem>
 
-namespace ed = ax::NodeEditor::BE;
-namespace BE {
+namespace BE
+{
+	class Sound2D;
+
+	enum class EditorState
+	{
+		Edit, Play, Pause, SimulatePhysics
+	};
+
 	class EditorLayer : public Layer
 	{
 	public:
 		EditorLayer();
-		virtual ~EditorLayer() = default;
-		virtual void OnAttcah() override;
-		virtual void OnDetach() override;
-		virtual void OnUpdate() override;
-		virtual void OnImGuiRender() override;
-		virtual void OnEvent(Event& event) override;
+
+		void OnAttach() override;
+		void OnDetach() override;
+		void OnUpdate(Timestep ts) override;
+		void OnEvent(Event& e) override;
+		void OnImGuiRender() override;
+
+		void OpenScene(const std::filesystem::path& filepath);
+		void SaveScene();
+
+		EditorState GetEditorState() const { return m_EditorState; }
+		bool IsViewportFocused() const { return m_ViewportFocused; }
+		bool IsViewportHovered() const { return m_ViewportHovered; }
 
 	private:
-		void EditorSelectEntity();
+		bool OnKeyPressed(KeyPressedEvent& e);
+
+		void NewScene();
+		void OpenScene();
+		void SaveSceneAs();
+
+		void UpdateEditorTitle(const std::filesystem::path& scenePath);
+
+		bool CanRenderSkybox() const;
+		void OnDeserialized(const glm::vec2& windowSize, const glm::vec2& windowPos, bool bWindowMaximized);
+		void SetCurrentScene(const Ref<Scene>& scene);
+
+		void UpdateGuizmo();
+
 	private:
-
-		Ref<Shader> m_Shader;
-		Ref<VertexArray> m_VertexArray;
-		Ref<Texture2D> m_Texture;
-
-		
-		Entity m_SquareEntity;
-		Entity m_CameraEntity;
-
-		OrthographicCameraController m_CameraController;
-
-
-		//Panels 
-		DockSpace m_DockSpace;
-		ViewportPanel m_ViewportPanel;
+		std::array<Ref<Texture>, 6> m_CubemapFaces;
 		SceneHierarchyPanel m_SceneHierarchyPanel;
-		PropertiesPanel m_PropertiesPanel;
 		ContentBrowserPanel m_ContentBrowserPanel;
-		ed::NodeEditorPanel m_NodeEditorPanel;
+
+		Ref<Scene> m_EditorScene;
+		Ref<Scene> m_SimulationScene;
+		Ref<Scene> m_CurrentScene;
+
+		Ref<Sound2D> m_PlaySound;
+
+		std::filesystem::path m_OpenedScenePath;
+		std::string m_WindowTitle;
+
+		glm::vec3 m_SnappingValues = glm::vec3(0.1f, 10.f, 0.1f);
+		glm::vec2 m_CurrentViewportSize = {1.f, 1.f};
+		glm::vec2 m_NewViewportSize = {1.f, 1.f};
+		glm::vec2 m_ViewportBounds[2] = {glm::vec2(), glm::vec2()};
+		EditorSerializer m_EditorSerializer;
+		Window& m_Window;
+		Timestep m_Ts;
+
+		int m_GuizmoType = 7; //ImGuizmo::TRANSLATE;
+		int m_EditorStyleIdx = 0;
+		EditorState m_EditorState = EditorState::Edit;
+
+		bool m_VSync = false;
+		bool m_ViewportHovered = false;
+		bool m_ViewportFocused = false;
+		bool m_ViewportHidden = false;
+		bool m_EnableSkybox = false;
+		bool m_StatsOpened = false;
+
+		friend class EditorSerializer;
 	};
 }
-

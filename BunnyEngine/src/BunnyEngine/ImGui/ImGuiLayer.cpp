@@ -28,7 +28,7 @@ namespace BE {
 	{
 	}
 
-	void ImGuiLayer::OnAttcah()
+	void ImGuiLayer::OnAttach()
 	{
         // Setup Dear ImGui context
         IMGUI_CHECKVERSION();
@@ -84,7 +84,7 @@ namespace BE {
 
 
 
-	void ImGuiLayer::Begine()
+	void ImGuiLayer::Begin()
 	{
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -156,6 +156,7 @@ namespace BE {
         colors[ImGuiCol_TitleBgCollapsed]       = ImVec4{ 0.15f, 0.1505f, 0.151f, 1.0f };
 
     }
+
 
     void ImGuiLayer::SetDarkTheme1Colors()
     {
@@ -252,7 +253,7 @@ namespace BE {
 
         style->Colors[ImGuiCol_Text] = ImVec4(0.40f, 0.39f, 0.38f, 1.00f);
         style->Colors[ImGuiCol_TextDisabled] = ImVec4(0.40f, 0.39f, 0.38f, 0.77f);
-        style->Colors[ImGuiCol_WindowBg] = ImVec4(0.92f, 0.91f, 0.88f, 0.70f);
+        style->Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.00f);
         style->Colors[ImGuiCol_ChildBg] = ImVec4(1.00f, 0.98f, 0.95f, 0.58f);
         style->Colors[ImGuiCol_PopupBg] = ImVec4(0.92f, 0.91f, 0.88f, 0.92f);
         style->Colors[ImGuiCol_Border] = ImVec4(0.84f, 0.83f, 0.80f, 0.65f);
@@ -293,10 +294,10 @@ namespace BE {
         style->Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(1.00f, 0.98f, 0.95f, 0.73f);
 
         //Tabs
-        style->Colors[ImGuiCol_Tab] = ImVec4{ 0.92f, 0.76f, 0.66f,  1.0f };
+        style->Colors[ImGuiCol_Tab] = ImVec4{ 0.83f, 0.85f, 0.77f,  1.0f };
         style->Colors[ImGuiCol_TabHovered] = ImVec4{ 0.95f, 0.89f, 0.86f, 0.78f };
         style->Colors[ImGuiCol_TabActive] = ImVec4{ 0.95f, 0.89f, 0.86f, 1.0f };
-        style->Colors[ImGuiCol_TabUnfocused] = ImVec4{ 0.92f, 0.76f, 0.66f, 1.0f };
+        style->Colors[ImGuiCol_TabUnfocused] = ImVec4{ 0.83f, 0.85f, 0.77f,  1.0f };
         style->Colors[ImGuiCol_TabUnfocusedActive] = ImVec4{ 0.95f, 0.89f, 0.86f, 0.78f };
 
         //style->Colors[ImGuiCol_TitleBg] = ImVec4{ 0.2f, 0.205f, 0.21f, 1.0f };

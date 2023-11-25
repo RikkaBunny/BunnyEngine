@@ -1,204 +1,282 @@
 #include "BEpch.h"
+
 #include "WindowsWindow.h"
+#include <Windows.h>
 
 #include "BunnyEngine/Events/ApplicationEvent.h"
 #include "BunnyEngine/Events/KeyEvent.h"
 #include "BunnyEngine/Events/MouseEvent.h"
+
 #include "Platform/OpenGL/OpenGLContext.h"
+#include "BunnyEngine/Renderer/Renderer.h"
 
-#include "stb_image.h"
+#include "GLFW/glfw3.h"
+#include <stb_image.h>
 
-namespace BE {
 
+namespace BE
+{
 	static bool s_GLFWInitialized = false;
+	float Window::s_HighDPIScaleFactor = 1.0f;
 
-	static void GLFWErrorCallback(int error, const char* description) {
+	static void GLFWErrorCallback(int error, const char* description)
+	{
 		BE_CORE_ERROR("GLFW Error ({0}): {1}", error, description);
 	}
 
-	Window* Window::Create(const WindowProps& props) {
-		return new WindowsWindow(props);
-	}
-
-	WindowsWindow::WindowsWindow(const WindowProps& props) {
+	WindowsWindow::WindowsWindow(const WindowProps& props)
+	{
 		Init(props);
 	}
 
-	WindowsWindow::~WindowsWindow() {
+	WindowsWindow::~WindowsWindow()
+	{
 		Shutdown();
 	}
 
-	void WindowsWindow::Init(const WindowProps& props) {
-
+	void WindowsWindow::Init(const WindowProps& props)
+	{
 		m_Data.Title = props.Title;
 		m_Data.Width = props.Width;
 		m_Data.Height = props.Height;
 
-		BE_CORE_INFO("Creating Window {0} ({1},{2})", props.Title, props.Width, props.Height);
+		BE_CORE_INFO("Creating window {0}", props.Title);
 
-		if (!s_GLFWInitialized) {
+#ifdef BE_DIST
+		::ShowWindow(::GetConsoleWindow(), SW_HIDE);
+#else
+		::ShowWindow(::GetConsoleWindow(), SW_RESTORE);
+#endif
+
+
+		if (!s_GLFWInitialized)
+		{
 			int success = glfwInit();
-			BE_CORE_ASSERT(success, "Could not intialize GLFW");
+			BE_CORE_ASSERT(success, "Could not initialize GLFW!");
 			glfwSetErrorCallback(GLFWErrorCallback);
 			s_GLFWInitialized = true;
 		}
-		////SMAA 多重采样
-		//glfwWindowHint(GLFW_SAMPLES, 4);
-		// 设置窗口提示 GLFW_DECORATED 的值为 GLFW_FALSE，以创建一个无边框窗口
-		glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-		//设置窗口初始化的 大小、 位置 、 titile、icon
-		m_Window = glfwCreateWindow((int)props.Width, (int)props.Height, m_Data.Title.c_str(), nullptr, nullptr);
-		auto monitor = glfwGetPrimaryMonitor();
-		auto curMonitor = glfwGetVideoMode(monitor);
-		SetWindowPos(curMonitor->width / 2 - (int)props.Width/2, curMonitor->height / 2 - (int)props.Height/2);
 
-		GLFWimage image;
-		image.pixels = stbi_load(m_IconPath, &image.width, &image.height, 0, 4);
-		glfwSetWindowIcon(m_Window, 1, &image);
-		stbi_image_free(image.pixels);
+#if defined(BE_DEBUG)
+		if (Renderer::GetAPI() == RendererAPI::API::OpenGL)
+			glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+#endif
 
-		m_Context = new OpenGLContext(m_Window);
+		GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+		float xscale, yscale;
+		glfwGetMonitorContentScale(monitor, &xscale, &yscale);
+
+		if (xscale > 1.0f || yscale > 1.0f)
+		{
+			s_HighDPIScaleFactor = yscale;
+			glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+		}
+		glfwWindowHint(GLFW_SAMPLES, 4);
+		if (props.Fullscreen)
+		{
+			m_Window = glfwCreateWindow(props.Width, props.Height, props.Title.c_str(), glfwGetPrimaryMonitor(), nullptr); //Fullscreen
+		}
+		else
+		{
+			m_Window = glfwCreateWindow(props.Width, props.Height, props.Title.c_str(), nullptr, nullptr);
+		}
+
+		m_Context = MakeRef<OpenGLContext>(m_Window);
 		m_Context->Init();
-		
+
+		SetWindowIcon("assets/textures/Editor/icon.png");
+
 		glfwSetWindowUserPointer(m_Window, &m_Data);
 		SetVSync(true);
 
-		//Set GLFW callbacks
-		glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, int width, int height) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
-			data.Width = width;
-			data.Height = height;
+		// Set GLFW callbacks
+		SetupGLFWCallbacks();
+	}
 
-			WindowResizeEvent event(width, height);
-			data.EventCallback(event);
-			
-		});
+	void WindowsWindow::SetFocus(bool focus)
+	{
+		if (focus)
+		{
+			glfwFocusWindow(m_Window);
+		}
+	}
 
-		glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
-			WindowCloseEvent event;
-			data.EventCallback(event);
-		});
+	void WindowsWindow::SetWindowSize(int width, int height)
+	{
+		glfwSetWindowSize(m_Window, width, height);
+	}
 
-		glfwSetKeyCallback(m_Window, [](GLFWwindow* window, int key, int scancode, int action, int mods) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+	void WindowsWindow::SetWindowMaximized(bool bMaximize)
+	{
+		auto func = bMaximize ? glfwMaximizeWindow : glfwRestoreWindow;
+		func(m_Window);
+	}
 
-			switch (action) {
+	void WindowsWindow::SetWindowPos(int x, int y)
+	{
+		glfwSetWindowPos(m_Window, x, y);
+	}
+
+	void WindowsWindow::SetWindowTitle(const std::string& title)
+	{
+		m_Data.Title = title;
+		glfwSetWindowTitle(m_Window, title.c_str());
+	}
+
+	void WindowsWindow::SetWindowIcon(const std::filesystem::path& iconPath)
+	{
+		int width, height, channels;
+		stbi_set_flip_vertically_on_load(0);
+		std::wstring pathString = iconPath.wstring();
+
+		char cpath[2048];
+		WideCharToMultiByte(65001 /* UTF8 */, 0, pathString.c_str(), -1, cpath, 2048, NULL, NULL);
+		stbi_uc* data = stbi_load(cpath, &width, &height, &channels, 0);
+
+		if (data)
+		{
+			GLFWimage images[1];
+			images[0].pixels = data;
+			images[0].width = width;
+			images[0].height = height;
+			glfwSetWindowIcon(m_Window, 1, images);
+		}
+
+		stbi_image_free(data);
+	}
+
+	glm::vec2 WindowsWindow::GetWindowSize() const
+	{
+		int w = 0, h = 0;
+		glfwGetWindowSize(m_Window, &w, &h);
+		return { w, h };
+	}
+
+	bool WindowsWindow::IsMaximized() const
+	{
+		return glfwGetWindowAttrib(m_Window, GLFW_MAXIMIZED);
+	}
+
+	glm::vec2 WindowsWindow::GetWindowPos() const
+	{
+		int x = 0, y = 0;
+		glfwGetWindowPos(m_Window, &x, &y);
+		return { x, y };
+	}
+
+	const std::string& WindowsWindow::GetWindowTitle() const
+	{
+		return m_Data.Title;
+	}
+
+	void WindowsWindow::Shutdown()
+	{
+		glfwDestroyWindow(m_Window);
+		m_Window = nullptr;
+	}
+
+	void WindowsWindow::OnUpdate()
+	{
+		glfwPollEvents();
+		m_Context->SwapBuffers();
+	}
+
+	void WindowsWindow::SetVSync(bool enable)
+	{
+		m_Data.VSync = enable;
+		glfwSwapInterval((int)m_Data.VSync);
+	}
+
+	void WindowsWindow::SetupGLFWCallbacks() const
+	{
+		glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
+			{
+				WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+
+				data.Width = width;
+				data.Height = height;
+
+				WindowResizeEvent event(width, height);
+				data.EventCallback(event);
+			});
+
+		glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window)
+			{
+				WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+
+				WindowCloseEvent event;
+				data.EventCallback(event);
+			});
+
+		glfwSetKeyCallback(m_Window, [](GLFWwindow* window, int key, int scancode, int action, int mods)
+			{
+				WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+
+				switch (action)
+				{
 				case GLFW_PRESS:
 				{
-					KeyPressedEvent event(key, 0);
+					KeyPressedEvent event((Key)key, 0);
 					data.EventCallback(event);
 					break;
 				}
 				case GLFW_RELEASE:
 				{
-					KeyReleasedEvent event(key);
+					KeyReleasedEvent event((Key)key);
 					data.EventCallback(event);
 					break;
 				}
 				case GLFW_REPEAT:
 				{
-					KeyPressedEvent event(key, 1);
+					KeyPressedEvent event((Key)key, 1);
 					data.EventCallback(event);
 					break;
 				}
-			}
-		});
+				}
+			});
 
-		glfwSetCharCallback(m_Window, [](GLFWwindow* window, unsigned int keycode) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
-			KeyTypedEvent event(keycode);
-			data.EventCallback(event);
-		});
+		glfwSetCharCallback(m_Window, [](GLFWwindow* window, unsigned int keyCode)
+			{
+				WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+				KeyTypedEvent event((Key)keyCode);
+				data.EventCallback(event);
+			});
 
-		glfwSetMouseButtonCallback(m_Window, [](GLFWwindow* window, int button, int action, int mods) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+		glfwSetMouseButtonCallback(m_Window, [](GLFWwindow* window, int button, int action, int mods)
+			{
+				WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-			switch (action) {
+				switch (action)
+				{
 				case GLFW_PRESS:
 				{
-					MouseButtonPressedEvent event(button);
+					MouseButtonPressedEvent event((Mouse)button);
 					data.EventCallback(event);
 					break;
 				}
 				case GLFW_RELEASE:
 				{
-					MouseButtonReleasedEvent event(button);
+					MouseButtonReleasedEvent event((Mouse)button);
 					data.EventCallback(event);
 					break;
 				}
-			}
-		});
+				}
+			});
 
-		glfwSetScrollCallback(m_Window, [](GLFWwindow* window, double xOffset, double yOffset ) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+		glfwSetScrollCallback(m_Window, [](GLFWwindow* window, double xOffset, double yOffset)
+			{
+				WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-			MouseScrolledEvent event((float)xOffset, (float)yOffset);
-			data.EventCallback(event);
-		});
+				MouseScrolledEvent event((float)xOffset, (float)yOffset);
+				data.EventCallback(event);
+			});
 
-		glfwSetCursorPosCallback(m_Window, [](GLFWwindow* window, double xPos, double yPos) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+		glfwSetCursorPosCallback(m_Window, [](GLFWwindow* window, double xPos, double yPos)
+			{
+				WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-			MouseMoveEvent event((float)xPos, (float)yPos);
-			data.EventCallback(event);
-		});
-		glfwSetWindowIconifyCallback(m_Window, [](GLFWwindow* window, int iconified) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
-			if (iconified) {
-				data.WindowState = WindowState::MINIMIZED;
-			}
-			else {
-				data.WindowState = WindowState::NORMAL;
-			}
-		});
-
-		glfwSetWindowMaximizeCallback(m_Window, [](GLFWwindow* window, int iconified) {
-			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
-			if (iconified) {
-				data.WindowState = WindowState::MAXIMIZED;
-			}
-			else {
-				data.WindowState = WindowState::NORMAL;
-			}
-		});
+				MouseMovedEvent event((float)xPos, (float)yPos);
+				data.EventCallback(event);
+			});
 	}
-
-	void WindowsWindow::Shutdown() {
-		glfwDestroyWindow(m_Window);
-	}
-
-	void WindowsWindow::OnUpdate() {
-		glfwPollEvents();
-		m_Context->SwapBuffers();
-		
-	}
-
-
-	void WindowsWindow::SetWindowPos(int windowPosX, int windowPosY)
-	{
-		glfwSetWindowPos(m_Window, windowPosX, windowPosY);
-	}
-
-	void WindowsWindow::SetWindowSize(int windowSizeX, int windowSizeY)
-	{
-		glfwSetWindowSize(m_Window, windowSizeX, windowSizeY);
-	}
-
-
-
-	void WindowsWindow::SetVSync(bool enabled) {
-		if (enabled) {
-			glfwSwapInterval(1);
-		}
-		else {
-			glfwSwapInterval(0);
-		}
-		m_Data.VSync = enabled;
-	}
-
-	bool WindowsWindow::IsVSync() const {
-		return m_Data.VSync;
-	}
-
 }

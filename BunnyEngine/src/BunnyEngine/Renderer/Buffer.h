@@ -1,125 +1,111 @@
 #pragma once
-#include <map>
 
-namespace BE {
-	//class RendererAPI;
-	class OpenGLUniformBuffer;
+namespace BE
+{
+	class Shader;
 
-	enum class ShaderDataType {
-		None = 0, Float, Float2, Float3, Float4, Mat3, Mat4, Int, Int2, Int3, Int4, Bool
+	enum class ShaderDataType
+	{
+		None = 0,
+		Float, Float2, Float3, Float4,
+		Mat3, Mat4,
+		Int, Int2, Int3, Int4,
+		Bool
 	};
-	
 
-	static uint8_t ShaderDataTypeSize(ShaderDataType type) {
+	static uint32_t ShaderDataTypeSize(ShaderDataType type)
+	{
 		switch (type)
 		{
-		case BE::ShaderDataType::Float:
-			return 4;
-		case BE::ShaderDataType::Float2:
-			return 4 * 2;
-		case BE::ShaderDataType::Float3:
-			return 4 * 3;
-		case BE::ShaderDataType::Float4:
-			return 4 * 4;
-		case BE::ShaderDataType::Mat3:
-			return 4 * 3 * 3;
-		case BE::ShaderDataType::Mat4:
-			return 4 * 4 * 4;
-		case BE::ShaderDataType::Int:
-			return 4;
-		case BE::ShaderDataType::Int2:
-			return 4 * 2;
-		case BE::ShaderDataType::Int3:
-			return 4 * 3;
-		case BE::ShaderDataType::Int4:
-			return 4 * 4;
-		case BE::ShaderDataType::Bool:
-			return 1;
+			case ShaderDataType::Float:		return sizeof(float);
+			case ShaderDataType::Float2:	return sizeof(float) * 2;
+			case ShaderDataType::Float3:	return sizeof(float) * 3;
+			case ShaderDataType::Float4:	return sizeof(float) * 4;
+			case ShaderDataType::Mat3:		return sizeof(float) * 3 * 3;
+			case ShaderDataType::Mat4:		return sizeof(float) * 4 * 4;
+			case ShaderDataType::Int:		return sizeof(int);
+			case ShaderDataType::Int2:		return sizeof(int) * 2;
+			case ShaderDataType::Int3:		return sizeof(int) * 3;
+			case ShaderDataType::Int4:		return sizeof(int) * 4;
+			case ShaderDataType::Bool:		return sizeof(bool);
 		}
-		
-		BE_CORE_ASSERT(false, "Unknown ShaderDataType !");
+
+		BE_CORE_ASSERT(false, "Unknow ShaderDataType!");
 		return 0;
 	}
 
-	struct  BufferElement
+	struct BufferElement
 	{
-		std::string Name;
 		ShaderDataType Type;
-		uint32_t Size;
-		uint32_t Offset;
+		std::string Name;
 		bool Normalized;
+		size_t Offset;
+		uint32_t Size;
 
-		BufferElement() {}
+		BufferElement() : 
+			Type(ShaderDataType::None),
+			Name(),
+			Normalized(false),
+			Offset(0),
+			Size(0)
+		{}
 
-		BufferElement(ShaderDataType type, const std::string& name, bool normalized = false)
-			:Name(name), Type(type), Size(ShaderDataTypeSize(type)), Offset(0), Normalized(normalized)
+		BufferElement(ShaderDataType type, const std::string& name, bool normalized = false) :
+			Type(type),
+			Name(name),
+			Normalized(normalized),
+			Offset(0),
+			Size(ShaderDataTypeSize(type))
+		{}
+
+		inline size_t GetOffset() const { return Offset; }
+
+		uint32_t GetComponentCount() const
 		{
-		}
-
-		uint32_t GetComponentCount() const {
 			switch (Type)
 			{
-			case BE::ShaderDataType::Float:
-				return 1;
-			case BE::ShaderDataType::Float2:
-				return 2;
-			case BE::ShaderDataType::Float3:
-				return 3;
-			case BE::ShaderDataType::Float4:
-				return 4;
-			case BE::ShaderDataType::Mat3:
-				return 3 * 3;
-			case BE::ShaderDataType::Mat4:
-				return 4 * 4;
-			case BE::ShaderDataType::Int:
-				return 1;
-			case BE::ShaderDataType::Int2:
-				return 2;
-			case BE::ShaderDataType::Int3:
-				return 3;
-			case BE::ShaderDataType::Int4:
-				return 4;
-			case BE::ShaderDataType::Bool:
-				return 1;
+				case ShaderDataType::Float:		return 1;
+				case ShaderDataType::Float2:	return 2;
+				case ShaderDataType::Float3:	return 3;
+				case ShaderDataType::Float4:	return 4;
+				case ShaderDataType::Mat3:		return 3;
+				case ShaderDataType::Mat4:		return 4;
+				case ShaderDataType::Int:		return 1;
+				case ShaderDataType::Int2:		return 2;
+				case ShaderDataType::Int3:		return 3;
+				case ShaderDataType::Int4:		return 4;
+				case ShaderDataType::Bool:		return 1;
 			}
-			BE_CORE_ASSERT(false, "Unknown ShaderDataType !");
+
+			BE_CORE_ASSERT(false, "Unknow ShaderDataType!");
 			return 0;
 		}
 	};
+	
+	class BufferLayout
+	{
+		using BufferLayoutVector = std::vector<BufferElement>;
 
-	class BufferLayout {
 	public:
-		BufferLayout() {}
+		BufferLayout() = default;
+		BufferLayout(const std::initializer_list<BufferElement>& elements);
 
-		BufferLayout(const std::initializer_list<BufferElement>& elements)
-			: m_Elements(elements) {
-			CalculateOffsetAndStride();
-		}
+		inline uint32_t GetStride() const { return m_Stride; }
+		inline const std::vector<BufferElement>& GetElements() const { return m_Elements; }
 
-		BufferLayout(const std::vector<BufferElement>& elements)
-			: m_Elements(elements) {
-			CalculateOffsetAndStride();
-		}
+		BufferLayoutVector::iterator				begin()			{ return m_Elements.begin();  }
+		BufferLayoutVector::iterator				end()			{ return m_Elements.end();	  }
+		BufferLayoutVector::reverse_iterator		rbegin()		{ return m_Elements.rbegin(); }
+		BufferLayoutVector::reverse_iterator		rend()			{ return m_Elements.rend();   }
 
-		inline uint32_t GetStride() const { return m_Stride; };
-		inline const std::vector<BufferElement>& GetElements() const { return m_Elements; };
-		inline void AddElement(BufferElement element) { m_Elements.push_back(element); CalculateOffsetAndStride(); };
+		BufferLayoutVector::const_iterator			begin()	  const { return m_Elements.begin();  }
+		BufferLayoutVector::const_iterator			end()	  const { return m_Elements.end();	  }
+		BufferLayoutVector::const_reverse_iterator rbegin()	  const { return m_Elements.rbegin(); }
+		BufferLayoutVector::const_reverse_iterator rend()	  const { return m_Elements.rend();   }
 
-		std::vector<BufferElement>::iterator begin() { return m_Elements.begin(); }
-		std::vector<BufferElement>::iterator end()	 { return m_Elements.end(); }
-		std::vector<BufferElement>::const_iterator begin() const { return m_Elements.begin(); }
-		std::vector<BufferElement>::const_iterator end()	const { return m_Elements.end(); }
 	private:
-		void CalculateOffsetAndStride() {
-			uint32_t offset = 0;
-			m_Stride = 0;
-			for (auto& element : m_Elements) {
-				element.Offset = offset;
-				offset += element.Size;
-				m_Stride += element.Size;
-			}
-		}
-
+		void CalculateStrideAndOffset();
+	
 	private:
 		std::vector<BufferElement> m_Elements;
 		uint32_t m_Stride = 0;
@@ -131,51 +117,58 @@ namespace BE {
 		virtual ~VertexBuffer() = default;
 
 		virtual void Bind() const = 0;
-		virtual void UnBind() const = 0;
+		virtual void Unbind() const = 0;
 
-		virtual const BufferLayout& GetLayout() const = 0;
+		virtual void UpdateData(const void* data, uint32_t size, uint32_t offset = 0) = 0;
+
+		//If default constructor was used, call this function to init memory.
+		virtual void SetData(const void* data, uint32_t size) = 0;
+		
 		virtual void SetLayout(const BufferLayout& layout) = 0;
+		virtual const BufferLayout& GetLayout() const = 0;
 
-		static Ref<VertexBuffer> Create(float* vertices, uint32_t size);
-
+		static Ref<VertexBuffer> Create();
+		static Ref<VertexBuffer> Create(uint32_t size);
+		static Ref<VertexBuffer> Create(const void* verteces, uint32_t size);
 	};
 
-	class IndexBuffer {
+	class IndexBuffer
+	{
 	public:
 		virtual ~IndexBuffer() = default;
 
 		virtual void Bind() const = 0;
-		virtual void UnBind() const = 0;
+		virtual void Unbind() const = 0;
+
+		virtual void SetData(const void* indeces, uint32_t count) = 0;
+		virtual void UpdateData(const void* indeces, uint32_t count, uint32_t offset = 0) = 0;
 
 		virtual uint32_t GetCount() const = 0;
 
-		static Ref<IndexBuffer> Create(uint32_t* indices, uint32_t count);
+		static Ref<IndexBuffer> Create();
+		static Ref<IndexBuffer> Create(uint32_t count);
+		static Ref<IndexBuffer> Create(const uint32_t* indeces, uint32_t count);
 
 	};
 
-	class OutBuffer {
+	class UniformBuffer
+	{
 	public:
-		enum class VisibleBuffer {
-			FinalBuffer = 0,
-			ColorBuffer = 1,
-			DepthBuffer = 2,
-			LightBuffer = 3,
-			WorldNormalBuffer = 4,
-			RoughnessBuffer = 5,
-			MetallicBuffer = 6,
-			AOBuffer = 7,
-			ReflectBuffer = 8
-		};
-		static VisibleBuffer GetOutBuffer() { return m_OutBuffer; }
-		static void SetOutBuffer(VisibleBuffer outBuffer) { m_OutBuffer = outBuffer; }
-	private:
-		static VisibleBuffer m_OutBuffer ;
+		virtual ~UniformBuffer() = default;
+
+		virtual void Bind() const = 0;
+		virtual void Unbind() const = 0;
+
+		//If default constructor was used, call this function to init memory.
+		virtual void SetData(const void* data, uint32_t size) = 0;
+		virtual uint32_t GetBlockSize(const std::string& blockName, const Ref<Shader>& inShader) = 0;
+		
+		virtual void UpdateData(const void* data, uint32_t size, uint32_t offset) = 0;
+
+		virtual uint32_t GetBindedSlot() const = 0;
+
+		static Ref<UniformBuffer> Create(uint32_t bindingSlot);
+		static Ref<UniformBuffer> Create(uint32_t size, uint32_t bindingSlot);
+		static Ref<UniformBuffer> Create(const void* data, uint32_t size, uint32_t bindingSlot);
 	};
-
-
-
-	
-
 }
-
-

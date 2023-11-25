@@ -1,58 +1,60 @@
 #pragma once
 
-#include "BEpch.h"
-
-#include "BunnyEngine/Core/Core.h"
+#include "Core.h"
 #include "BunnyEngine/Events/Event.h"
 
+#include <string>
+#include <filesystem>
+#include <functional>
+#include <glm/glm.hpp>
 
-namespace BE {
-	
-	enum class WindowState {
-		NORMAL,
-		MINIMIZED,
-		MAXIMIZED
-	};
-
+namespace BE
+{
 	struct WindowProps
 	{
 		std::string Title;
 		uint32_t Width;
 		uint32_t Height;
+		bool Fullscreen;
 
-		WindowProps(const std::string& title = "Bunny Engine",
-			uint32_t width = 1600,
-			uint32_t height = 900)
-			: Title(title), Width(width), Height(height) {
-
-		}
+		WindowProps(const std::string& title = "BunnyEngine", uint32_t width = 1280, uint32_t height = 720, bool fullscreen = false)
+			: Title(title), Width(width), Height(height), Fullscreen(fullscreen) {}
 	};
 
-	class BE_API Window {
+	//Window interface
+	class Window
+	{
 	public:
 		using EventCallbackFn = std::function<void(Event&)>;
 
-		virtual ~Window() {}
+		virtual ~Window() = default;
 
 		virtual void OnUpdate() = 0;
-		virtual void SetWindowPos(int windowPosX, int windowPosY) = 0;
-		virtual void SetWindowSize(int windowSizeX, int windowSizeY) = 0;
-		virtual void SetWindowIconify() = 0;
-		virtual void SetWindowMaximize() = 0;
-		virtual void SetWindowRestore() = 0;
 
-		virtual uint32_t GetWidth() const = 0;
-		virtual uint32_t GetHeight() const = 0;
-		virtual WindowState GetWindowState() const = 0;
+		inline virtual uint32_t GetWidth()  const = 0;
+		inline virtual uint32_t GetHeight() const = 0;
 
-		//Window attributes 
+		inline virtual void* GetNativeWindow() const = 0;
+
+		//Window attributes
 		virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
-		virtual void SetVSync(bool enabled) = 0;
+		virtual void SetVSync(bool enable) = 0;
+		virtual void SetFocus(bool focus) = 0;
+		virtual void SetWindowSize(int width, int height) = 0;
+		virtual void SetWindowMaximized(bool bMaximize) = 0;
+		virtual void SetWindowTitle(const std::string& title) = 0;
+		virtual void SetWindowPos(int x, int y) = 0;
+		virtual void SetWindowIcon(const std::filesystem::path& iconPath) = 0;
+
 		virtual bool IsVSync() const = 0;
+		virtual glm::vec2 GetWindowSize() const = 0;
+		virtual bool IsMaximized() const = 0;
+		virtual glm::vec2 GetWindowPos() const = 0;
+		virtual const std::string& GetWindowTitle() const = 0;
 
-		virtual void* GetNativeWindow() const = 0;
+		static Ref<Window> Create(const WindowProps& props = WindowProps());
 
-		static Window* Create(const WindowProps& props = WindowProps());
+	public:
+		static float s_HighDPIScaleFactor;
 	};
-
 }

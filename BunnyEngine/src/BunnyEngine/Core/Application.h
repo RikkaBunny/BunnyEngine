@@ -1,59 +1,55 @@
 #pragma once
 
 #include "BunnyEngine/Core/Core.h"
-#include "BunnyEngine/Events/Event.h"
-#include "BunnyEngine/Events/ApplicationEvent.h"
 #include "BunnyEngine/Core/Window.h"
+#include "BunnyEngine/Events/ApplicationEvent.h"
+#include "BunnyEngine/Core/Layer.h"
 #include "BunnyEngine/Core/LayerStack.h"
 
 #include "BunnyEngine/ImGui/ImGuiLayer.h"
 
-#include "BunnyEngine/Core/Timestep.h"
+int main(int argc, char** argv);
 
-//#include "BunnyEngine/Renderer/Shader.h"
-//#include "BunnyEngine/Renderer/Buffer.h"
-//#include "BunnyEngine/Renderer/VertexArray.h"
-//
-//#include "BunnyEngine/Renderer/OrthographicCamera.h"
-
-
-namespace BE {
-
-	class BE_API Application
+namespace BE
+{
+	class Application
 	{
 	public:
-		Application(const std::string& name = "Bunny Engine");
+		Application(const std::string& name = "BunnyEngine Application");
+		Application(const Application&) = delete;
 		virtual ~Application();
 
-		void Run();
-		void Close() { m_Running = false; }
-
-		void OnEvent(Event& e);
+		static inline Application& Get() { return *s_Instance; }
+		inline Window& GetWindow() { return *m_Window; }
+		inline bool IsMinimized() const { return m_Minimized; }
+		void SetShouldClose(bool close);
 
 		void PushLayer(Layer* layer);
-		void PushOverlay(Layer* layer);
+		bool PopLayer(Layer* layer);
+		void PushLayout(Layer* layer);
+		bool PopLayout(Layer* layer);
 
-		inline static Application& Get() {return *s_Instance;}
-		inline Window& GetWindow() { return *m_Window; }
-		inline ImGuiLayer& GetImGuiLayer() { return *m_ImGuiLayer; }
+	protected:
+		virtual bool OnWindowClose(WindowCloseEvent& e);
+		virtual bool OnWindowResize(WindowResizeEvent& e);
+		virtual void OnEvent(Event& e);
 
-	private:
-		bool OnWindowClose(WindowCloseEvent& e);
-		bool OnWindowResize(WindowResizeEvent& e);
+		void Run();
 
-		Scope<Window> m_Window;
+		friend int ::main(int argc, char** argv);
+
+	protected:
+		WindowProps m_WindowProps;
+		Ref<Window> m_Window;
 		ImGuiLayer* m_ImGuiLayer;
-
+		LayerStack m_LayerStack;
 		bool m_Running = true;
 		bool m_Minimized = false;
 
-		LayerStack m_LayerStack;
-
-		float m_LastFrameTime = 0.0f;
-		
-	private:
 		static Application* s_Instance;
 	};
 
+	//To be defined in CLIENT
 	Application* CreateApplication();
 }
+

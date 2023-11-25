@@ -4,21 +4,20 @@
 #include "Renderer.h"
 #include "Platform/OpenGL/OpenGLVertexArray.h"
 
-namespace BE {
-
+namespace BE
+{
 	Ref<VertexArray> VertexArray::Create()
 	{
 		switch (Renderer::GetAPI())
 		{
-		case RendererAPI::API::None:
-			BE_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
-			return nullptr;
-		case RendererAPI::API::OpenGL:
-			return std::make_shared<OpenGLVertexArray>();
-		}
+			case RendererAPI::API::None:
+				BE_CORE_ASSERT(false, "RendererAPI::None currently is not supported!");
+				return nullptr;
 
-		BE_CORE_ASSERT(false, "Unknow RendererAPI!");
+			case RendererAPI::API::OpenGL:
+				return MakeRef<OpenGLVertexArray>();
+		}
+		BE_CORE_ASSERT(false, "Unknown RendererAPI!");
 		return nullptr;
 	}
-
 }
